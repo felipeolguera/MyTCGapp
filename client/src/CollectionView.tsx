@@ -32,6 +32,11 @@ import {
   lookupCardPrice,
   type PriceIndex,
 } from "./prices";
+import {
+  buildAskingTotalClipboard,
+  copyText,
+  sumAskingTotal,
+} from "./sellHelpers";
 
 interface CollectionViewProps {
   collection: CollectionSummary | null;
@@ -52,6 +57,7 @@ interface CollectionViewProps {
   ) => Promise<void>;
   onDeleteEntry: (id: string) => Promise<void>;
   onRestore: (entries: CollectionEntry[]) => Promise<void>;
+  onBulkSetForSale: (ids: string[], forSale: boolean) => Promise<void>;
 }
 
 export function CollectionView({
@@ -63,6 +69,7 @@ export function CollectionView({
   onUpdateEntry,
   onDeleteEntry,
   onRestore,
+  onBulkSetForSale,
 }: CollectionViewProps) {
   const [index, setIndex] = useState<PriceIndex | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -81,6 +88,7 @@ export function CollectionView({
     useState<CollectionFinishFilter>("all");
   const [saleFilter, setSaleFilter] = useState<CollectionSaleFilter>("all");
   const [sort, setSort] = useState<CollectionSort>("name");
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   useEffect(() => {
     void loadPriceIndex()
@@ -120,6 +128,7 @@ export function CollectionView({
   const pricedCount = priced.filter((r) => r.line != null).length;
   const visibleCards = visible.reduce((sum, row) => sum + row.entry.quantity, 0);
   const visibleValue = visible.reduce((sum, row) => sum + (row.line ?? 0), 0);
+  const visibleAskingTotal = sumAskingTotal(visible);
   const filtered =
     query.trim() !== "" ||
     finishFilter !== "all" ||
@@ -196,24 +205,43 @@ export function CollectionView({
     setExportArtifacts(null);
   }
 
-  async function handleExport() {
+  async function handleExport(sellSheet = false) {
     if (!collection || visible.length === 0 || exporting) return;
     setExporting(true);
     onStatus?.(null);
     onError?.(null);
     try {
-      const artifacts = await prepareExportArtifacts(visible, {
-        cards: visibleCards,
-        unique: visible.length,
-        market: visibleValue,
-        priced: visible.filter((r) => r.line != null).length,
-      });
+      const rows = sellSheet
+        ? visible.filter((r) => r.entry.forSale)
+        : visible;
+      if (rows.length === 0) {
+        onError?.(
+          sellSheet
+            ? "No for-sale cards in this view — mark some first"
+            : "Nothing to export",
+        );
+        return;
+      }
+      const cards = rows.reduce((n, r) => n + r.entry.quantity, 0);
+      const market = rows.reduce((n, r) => n + (r.line ?? 0), 0);
+      const artifacts = await prepareExportArtifacts(
+        rows,
+        {
+          cards,
+          unique: rows.length,
+          market,
+          priced: rows.filter((r) => r.line != null).length,
+        },
+        { sellSheet },
+      );
       revokeExportArtifacts(exportArtifacts);
       setExportArtifacts(artifacts);
       onStatus?.(
-        filtered
-          ? `Export ready for ${visible.length} filtered lines`
-          : "Export ready — preview below, then Share or Save image",
+        sellSheet
+          ? `Sell sheet ready · ${rows.length} for-sale lines · ${formatUsd(market)}`
+          : filtered
+            ? `Export ready for ${rows.length} filtered lines`
+            : "Export ready — preview below, then Share or Save image",
       );
     } catch (err) {
       onError?.(
@@ -221,6 +249,42 @@ export function CollectionView({
       );
     } finally {
       setExporting(false);
+    }
+  }
+
+  async function handleCopyAskingTotal() {
+    if (visible.length === 0) return;
+    onError?.(null);
+    try {
+      const text = buildAskingTotalClipboard(visible);
+      await copyText(text);
+      onStatus?.(`Copied · ${text}`);
+    } catch (err) {
+      onError?.(err instanceof Error ? err.message : "Could not copy total");
+    }
+  }
+
+  async function handleBulkForSale(forSale: boolean) {
+    if (visible.length === 0 || bulkBusy) return;
+    setBulkBusy(true);
+    onError?.(null);
+    try {
+      await onBulkSetForSale(
+        visible.map((r) => r.entry.id),
+        forSale,
+      );
+      onStatus?.(
+        forSale
+          ? `Marked ${visible.length} lines for sale`
+          : `Cleared for-sale on ${visible.length} lines`,
+      );
+      if (forSale) setSaleFilter("for-sale");
+    } catch (err) {
+      onError?.(
+        err instanceof Error ? err.message : "Could not update for-sale flags",
+      );
+    } finally {
+      setBulkBusy(false);
     }
   }
 
@@ -344,7 +408,7 @@ export function CollectionView({
           <button
             type="button"
             className="btn btn--primary btn--compact"
-            onClick={() => void handleExport()}
+            onClick={() => void handleExport(false)}
             disabled={exporting || visible.length === 0}
           >
             {exporting ? "Preparing…" : filtered ? "Export view" : "Export"}
@@ -366,6 +430,47 @@ export function CollectionView({
           </button>
         </div>
       </header>
+
+      <div className="sell-toolbar">
+        <div className="sell-toolbar__total">
+          <span className="sell-toolbar__label">View total</span>
+          <strong>{formatUsd(visibleAskingTotal)}</strong>
+        </div>
+        <div className="sell-toolbar__actions">
+          <button
+            type="button"
+            className="btn btn--ghost btn--compact"
+            onClick={() => void handleCopyAskingTotal()}
+            disabled={visible.length === 0}
+          >
+            Copy total
+          </button>
+          <button
+            type="button"
+            className="btn btn--ghost btn--compact"
+            onClick={() => void handleBulkForSale(true)}
+            disabled={visible.length === 0 || bulkBusy}
+          >
+            Mark for sale
+          </button>
+          <button
+            type="button"
+            className="btn btn--ghost btn--compact"
+            onClick={() => void handleBulkForSale(false)}
+            disabled={visible.length === 0 || bulkBusy}
+          >
+            Clear sale
+          </button>
+          <button
+            type="button"
+            className="btn btn--primary btn--compact"
+            onClick={() => void handleExport(true)}
+            disabled={exporting || visible.length === 0}
+          >
+            Sell sheet
+          </button>
+        </div>
+      </div>
 
       <div className="collection-toolbar">
         <label className="collection-toolbar__search" htmlFor="collection-query">
@@ -423,8 +528,8 @@ export function CollectionView({
       </div>
 
       <p className="collection-view__export-hint muted">
-        Tap a card to edit qty, foil, condition, asking price, or for-sale.
-        Export/Backup use the current view / full binder.
+        Mark filtered cards for sale, copy the view total for listings, or export
+        a sell sheet (for-sale lines only, with condition).
       </p>
 
       {exportArtifacts && (

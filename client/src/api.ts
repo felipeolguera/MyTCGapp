@@ -7,6 +7,7 @@ import type {
 import { searchGaCardsDirect } from "./gatcgClient";
 import {
   addLocalCollection,
+  bulkSetForSaleLocal,
   getLocalCollection,
   removeLocalCollection,
   replaceLocalCollection,
@@ -120,6 +121,23 @@ export async function restoreCollection(
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ entries }),
+    }),
+  );
+  return data.collection;
+}
+
+export async function bulkSetForSale(
+  ids: string[],
+  forSale: boolean,
+): Promise<CollectionSummary> {
+  if (isStandaloneMode()) {
+    return bulkSetForSaleLocal(ids, forSale);
+  }
+  const data = await json<{ collection: CollectionSummary }>(
+    await fetch("/api/collection/bulk-sale", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids, forSale }),
     }),
   );
   return data.collection;

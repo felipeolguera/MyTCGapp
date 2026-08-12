@@ -155,7 +155,17 @@ export function createCollectionStore() {
     return summary();
   }
 
-  return { summary, upsert, add, update, remove, get, replaceAll };
+  function bulkSetForSale(ids: string[], forSale: boolean): CollectionSummary {
+    const idSet = new Set(ids);
+    const now = new Date().toISOString();
+    for (const [id, entry] of entries) {
+      if (!idSet.has(id)) continue;
+      entries.set(id, { ...entry, forSale, updatedAt: now });
+    }
+    return summary();
+  }
+
+  return { summary, upsert, add, update, remove, get, replaceAll, bulkSetForSale };
 }
 
 export type CollectionStore = ReturnType<typeof createCollectionStore>;

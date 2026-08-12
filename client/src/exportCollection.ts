@@ -18,6 +18,11 @@ export interface ExportTotals {
   priced: number;
 }
 
+export interface ExportStyle {
+  /** Marketplace-oriented title and asking-price disclaimer. */
+  sellSheet?: boolean;
+}
+
 export interface ExportArtifacts {
   stamp: string;
   csvName: string;
@@ -42,9 +47,9 @@ export function exportFinishTag(finish: CollectionEntry["finish"]): string {
   return finish === "foil" ? "(F)" : "(N)";
 }
 
-/** Always label finish so Normal/Foil stay distinct when selling. */
+/** Always label finish + condition so sells stay clear. */
 export function exportCardName(entry: CollectionEntry): string {
-  return `${entry.card.name} ${exportFinishTag(entry.finish)}`;
+  return `${entry.card.name} ${exportFinishTag(entry.finish)} ${entry.condition}`;
 }
 
 /** Set code + collector number, e.g. ReC-SLM-001 */
@@ -133,11 +138,15 @@ export function buildCollectionCsv(
 export function buildCollectionShareText(
   rows: ExportRow[],
   totals: ExportTotals,
+  style: ExportStyle = {},
 ): string {
   const sorted = sortExportRows(rows);
   const dated = new Date().toISOString().slice(0, 10);
+  const title = style.sellSheet
+    ? `Archive Binder — Grand Archive FOR SALE`
+    : `Archive Binder — Grand Archive for sale`;
   const lines = [
-    `Archive Binder — Grand Archive for sale`,
+    title,
     `Exported ${dated}`,
     `${exportQuantity(totals.cards)} · ${totals.unique} lines · ${formatUsd(totals.market)} total`,
     "",
@@ -168,7 +177,11 @@ export function buildCollectionShareText(
     ].join(" | "),
   );
   lines.push("");
-  lines.push("Prices are TCGPlayer market estimates and may change.");
+  lines.push(
+    style.sellSheet
+      ? "Unit prices are asking (or TCGPlayer market when blank) and may change."
+      : "Prices are asking or TCGPlayer market estimates and may change.",
+  );
 
   return lines.join("\n");
 }
@@ -180,6 +193,7 @@ export function buildCollectionShareText(
 export async function buildCollectionShareImage(
   rows: ExportRow[],
   totals: ExportTotals,
+  style: ExportStyle = {},
 ): Promise<Blob | null> {
   if (typeof document === "undefined") return null;
 
@@ -215,7 +229,11 @@ export async function buildCollectionShareImage(
 
   ctx.fillStyle = "#ebe6dc";
   ctx.font = "650 42px Fraunces, Palatino Linotype, serif";
-  ctx.fillText("Grand Archive — for sale", padX, 98);
+  ctx.fillText(
+    style.sellSheet ? "Grand Archive — FOR SALE" : "Grand Archive — for sale",
+    padX,
+    98,
+  );
 
   ctx.fillStyle = "#9aa6b5";
   ctx.font = "400 22px Figtree, Avenir Next, Segoe UI, sans-serif";
@@ -283,7 +301,9 @@ export async function buildCollectionShareImage(
   ctx.fillStyle = "#9aa6b5";
   ctx.font = "400 16px Figtree, Avenir Next, Segoe UI, sans-serif";
   ctx.fillText(
-    "TCGPlayer market estimates · prices may change",
+    style.sellSheet
+      ? "Asking prices (market used when blank) · may change"
+      : "Asking or TCGPlayer market estimates · may change",
     padX,
     footY + 36,
   );
@@ -334,14 +354,17 @@ function downloadBlob(blob: Blob, filename: string) {
 export async function prepareExportArtifacts(
   rows: ExportRow[],
   totals: ExportTotals,
+  style: ExportStyle = {},
 ): Promise<ExportArtifacts> {
   const stamp = new Date().toISOString().slice(0, 10);
   const csvName = `archive-binder-collection-${stamp}.csv`;
-  const imageName = `archive-binder-collection-${stamp}.png`;
+  const imageName = style.sellSheet
+    ? `archive-binder-forsale-${stamp}.png`
+    : `archive-binder-collection-${stamp}.png`;
   const csv = buildCollectionCsv(rows, totals);
-  const text = buildCollectionShareText(rows, totals);
+  const text = buildCollectionShareText(rows, totals, style);
   const csvBlob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const imageBlob = await buildCollectionShareImage(rows, totals);
+  const imageBlob = await buildCollectionShareImage(rows, totals, style);
   return {
     stamp,
     csvName,

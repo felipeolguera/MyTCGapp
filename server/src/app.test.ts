@@ -201,6 +201,19 @@ describe("Grand Archive collection API", () => {
     expect(restore.body.collection.entries[0].finish).toBe("foil");
   });
 
+  it("bulk marks lines for sale", async () => {
+    const app = createApp({ searchCards: vi.fn(async () => []) });
+    const created = await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 2 });
+    const id = created.body.entry.id as string;
+    const bulk = await request(app)
+      .post("/api/collection/bulk-sale")
+      .send({ ids: [id], forSale: true });
+    expect(bulk.status).toBe(200);
+    expect(bulk.body.collection.entries[0].forSale).toBe(true);
+  });
+
   it("deletes a collection entry", async () => {
     const app = createApp({ searchCards: vi.fn(async () => []) });
     const created = await request(app)

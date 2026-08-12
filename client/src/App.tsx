@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   addToCollection,
+  bulkSetForSale,
   fetchCollection,
   removeFromCollection,
   restoreCollection,
@@ -292,6 +293,12 @@ export function App() {
     setLastAdd(null);
   }
 
+  async function handleBulkSetForSale(ids: string[], forSale: boolean) {
+    const next = await bulkSetForSale(ids, forSale);
+    setCollection(next);
+    setLastAdd(null);
+  }
+
   return (
     <div className="app">
       <header className="topbar">
@@ -494,6 +501,7 @@ export function App() {
             onUpdateEntry={handleUpdateEntry}
             onDeleteEntry={handleDeleteEntry}
             onRestore={handleRestoreCollection}
+            onBulkSetForSale={handleBulkSetForSale}
           />
         )}
       </main>

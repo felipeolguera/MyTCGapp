@@ -249,3 +249,17 @@ export function replaceLocalCollection(
   writeEntries(normalized);
   return summarize(normalized);
 }
+
+/** Bulk toggle for-sale on many lines (one write). */
+export function bulkSetForSaleLocal(
+  ids: string[],
+  forSale: boolean,
+): CollectionSummary {
+  const idSet = new Set(ids);
+  const now = new Date().toISOString();
+  const next = readEntries().map((entry) =>
+    idSet.has(entry.id) ? { ...entry, forSale, updatedAt: now } : entry,
+  );
+  writeEntries(next);
+  return summarize(next);
+}

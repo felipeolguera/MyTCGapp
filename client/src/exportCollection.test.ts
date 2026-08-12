@@ -77,8 +77,8 @@ describe("exportCollection", () => {
     expect(csv).toContain(
       "Card name,Code,Unit price,Total quantity,Total price",
     );
-    expect(csv).toContain('"Spirit of ""Slime"" (N)"');
-    expect(csv).toContain('"Spirit of ""Slime"" (F)"');
+    expect(csv).toContain('"Spirit of ""Slime"" (N) NM"');
+    expect(csv).toContain('"Spirit of ""Slime"" (F) NM"');
     expect(csv).toContain("ReC-SLM-001,1.25,(3pcs),3.75");
     expect(csv).toContain("ReC-SLM-001,4.50,(2pcs),9.00");
     expect(csv).toContain("TOTAL,,,(5pcs),12.75");
@@ -92,10 +92,10 @@ describe("exportCollection", () => {
       "Card name | Code | Unit price | Total quantity | Total price",
     );
     expect(text).toContain(
-      'Spirit of "Slime" (N) | ReC-SLM-001 | $1.25 | (3pcs) | $3.75',
+      'Spirit of "Slime" (N) NM | ReC-SLM-001 | $1.25 | (3pcs) | $3.75',
     );
     expect(text).toContain(
-      'Spirit of "Slime" (F) | ReC-SLM-001 | $4.50 | (2pcs) | $9.00',
+      'Spirit of "Slime" (F) NM | ReC-SLM-001 | $4.50 | (2pcs) | $9.00',
     );
     expect(text).toContain("TOTAL |  |  | (5pcs) | $12.75");
     expect(text).toContain("TCGPlayer market estimates");

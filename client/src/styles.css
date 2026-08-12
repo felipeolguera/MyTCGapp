@@ -609,9 +609,41 @@ input {
   gap: 0.4rem;
 }
 
-.collection-view__export-hint {
-  margin: 0 0 0.85rem;
-  font-size: 0.82rem;
+.sell-toolbar {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0 0 0.75rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 14px;
+  background: rgba(125, 206, 160, 0.08);
+  border: 1px solid rgba(125, 206, 160, 0.22);
+}
+
+.sell-toolbar__total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.sell-toolbar__label {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ok);
+  font-weight: 700;
+}
+
+.sell-toolbar__total strong {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  color: var(--text);
+}
+
+.sell-toolbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
 }
 
 .collection-view__filter-meta {

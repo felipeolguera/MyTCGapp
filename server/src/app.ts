@@ -109,6 +109,17 @@ export function createApp(
     }
   });
 
+  app.post("/api/collection/bulk-sale", (req: Request, res: Response) => {
+    const ids = req.body?.ids;
+    const forSale = Boolean(req.body?.forSale);
+    if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) {
+      res.status(400).json({ error: "Body must include ids: string[]" });
+      return;
+    }
+    const next = collection.bulkSetForSale(ids, forSale);
+    res.json({ collection: next });
+  });
+
   app.put("/api/collection/:id", (req: Request, res: Response) => {
     const quantity = Number(req.body?.quantity);
     const card = req.body?.card as GaCardEdition | undefined;
