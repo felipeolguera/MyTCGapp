@@ -387,10 +387,14 @@ export function App() {
             width={40}
             height={40}
           />
-          <div>
-            <p className="brand">Archive Binder</p>
-            <h1>{tab === "collection" ? "Binder" : "Grand Archive"}</h1>
-          </div>
+          {tab === "collection" ? (
+            <h1 className="topbar__title-inline">Archive Binder</h1>
+          ) : (
+            <div>
+              <p className="brand">Archive Binder</p>
+              <h1>Grand Archive</h1>
+            </div>
+          )}
         </div>
         <div className="topbar__stats">
           <span className="topbar__version" title="App version">

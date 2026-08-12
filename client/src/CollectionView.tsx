@@ -856,29 +856,26 @@ export function CollectionView({
   return (
     <section className="collection-view">
       <header className="collection-view__header">
-        <div>
-          <h2>Collection</h2>
-          <p className="muted collection-view__summary">
-            {collection.totalCards} cards · {collection.uniqueCards} unique
-            {index
-              ? ` · ~${formatUsd(totalValue)}`
-              : ""}
-            {filtered
-              ? ` · showing ${visibleCards}`
-              : ""}
-          </p>
-          <p className="muted collection-view__meta-line">
-            {formatBackupAge(backupMeta)}
-            {" · "}
-            {formatPriceIndexAge(index)}
-            {" · "}
-            {ledgerSummary}
-            {canUndo ? " · undo" : ""}
-            {movers.length > 0
-              ? ` · ${formatMoversSummary(movers)}`
-              : ""}
-          </p>
-        </div>
+        <p
+          className="collection-view__summary"
+          title={[
+            formatBackupAge(backupMeta),
+            formatPriceIndexAge(index),
+            ledgerSummary,
+            canUndo ? "undo available" : null,
+            movers.length > 0 ? formatMoversSummary(movers) : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        >
+          <strong>Collection</strong>
+          <span className="muted">
+            {" "}
+            · {collection.totalCards} cards · {collection.uniqueCards} unique
+            {index ? ` · ~${formatUsd(totalValue)}` : ""}
+            {filtered ? ` · showing ${visibleCards}` : ""}
+          </span>
+        </p>
         <div className="collection-view__actions">
           <button
             type="button"
@@ -931,6 +928,17 @@ export function CollectionView({
 
       {showTools && !selectMode && (
         <div className="panel-sheet" role="region" aria-label="Collection tools">
+          <p className="muted panel-sheet__meta">
+            {formatBackupAge(backupMeta)}
+            {" · "}
+            {formatPriceIndexAge(index)}
+            {" · "}
+            {ledgerSummary}
+            {canUndo ? " · undo available" : ""}
+            {movers.length > 0
+              ? ` · ${formatMoversSummary(movers)}`
+              : ""}
+          </p>
           <div className="panel-sheet__actions">
             <button
               type="button"
