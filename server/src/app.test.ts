@@ -62,6 +62,7 @@ describe("Grand Archive collection API", () => {
       .send({ card: sampleCard, quantity: 2 });
     expect(first.status).toBe(201);
     expect(first.body.entry.quantity).toBe(2);
+    expect(first.body.entry.finish).toBe("normal");
     expect(first.body.collection.totalCards).toBe(2);
 
     const second = await request(app)
@@ -71,6 +72,21 @@ describe("Grand Archive collection API", () => {
     expect(second.body.entry.quantity).toBe(5);
     expect(second.body.collection.uniqueCards).toBe(1);
     expect(second.body.collection.totalCards).toBe(5);
+  });
+
+  it("tracks foil and normal as separate entries", async () => {
+    const app = createApp({ searchCards: vi.fn(async () => []) });
+    await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 1, finish: "normal" });
+    const foil = await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 2, finish: "foil" });
+    expect(foil.status).toBe(201);
+    expect(foil.body.entry.finish).toBe("foil");
+    expect(foil.body.entry.quantity).toBe(2);
+    expect(foil.body.collection.uniqueCards).toBe(2);
+    expect(foil.body.collection.totalCards).toBe(3);
   });
 
   it("rejects invalid quantity on add", async () => {
@@ -83,25 +99,178 @@ describe("Grand Archive collection API", () => {
 
   it("sets absolute quantity and removes at zero", async () => {
     const app = createApp({ searchCards: vi.fn(async () => []) });
-    await request(app).post("/api/collection").send({ card: sampleCard, quantity: 4 });
+    const created = await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 4 });
+    const id = created.body.entry.id as string;
 
     const updated = await request(app)
-      .put(`/api/collection/${sampleCard.editionId}`)
-      .send({ quantity: 1 });
+      .put(`/api/collection/${id}`)
+      .send({ quantity: 1, finish: "normal", card: sampleCard });
     expect(updated.status).toBe(200);
     expect(updated.body.entry.quantity).toBe(1);
 
     const cleared = await request(app)
-      .put(`/api/collection/${sampleCard.editionId}`)
-      .send({ quantity: 0 });
+      .put(`/api/collection/${id}`)
+      .send({ quantity: 0, finish: "normal", card: sampleCard });
     expect(cleared.status).toBe(200);
     expect(cleared.body.collection.uniqueCards).toBe(0);
   });
 
+  it("returns previousQuantity for undo support", async () => {
+    const app = createApp({ searchCards: vi.fn(async () => []) });
+    const first = await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 2 });
+    expect(first.body.previousQuantity).toBe(0);
+
+    const second = await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 3 });
+    expect(second.body.previousQuantity).toBe(2);
+    expect(second.body.entry.quantity).toBe(5);
+  });
+
+  it("moves an entry when finish changes on update", async () => {
+    const app = createApp({ searchCards: vi.fn(async () => []) });
+    const created = await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 4, finish: "normal" });
+    const id = created.body.entry.id as string;
+
+    const moved = await request(app)
+      .put(`/api/collection/${encodeURIComponent(id)}`)
+      .send({ quantity: 4, finish: "foil", card: sampleCard });
+    expect(moved.status).toBe(200);
+    expect(moved.body.entry.finish).toBe("foil");
+    expect(moved.body.entry.id).toBe(`${sampleCard.editionId}:foil`);
+    expect(moved.body.collection.uniqueCards).toBe(1);
+    expect(moved.body.collection.entries[0].finish).toBe("foil");
+  });
+
+  it("adds with sell metadata", async () => {
+    const app = createApp({ searchCards: vi.fn(async () => []) });
+    const created = await request(app)
+      .post("/api/collection")
+      .send({
+        card: sampleCard,
+        quantity: 1,
+        finish: "foil",
+        forSale: true,
+        condition: "LP",
+        askingPrice: 6.25,
+      });
+    expect(created.status).toBe(201);
+    expect(created.body.entry.forSale).toBe(true);
+    expect(created.body.entry.condition).toBe("LP");
+    expect(created.body.entry.askingPrice).toBe(6.25);
+    expect(created.body.entry.finish).toBe("foil");
+  });
+
+  it("updates sell metadata on an entry", async () => {
+    const app = createApp({ searchCards: vi.fn(async () => []) });
+    const created = await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 1 });
+    expect(created.body.entry.forSale).toBe(false);
+    expect(created.body.entry.condition).toBe("NM");
+    const id = created.body.entry.id as string;
+
+    const updated = await request(app)
+      .put(`/api/collection/${encodeURIComponent(id)}`)
+      .send({
+        quantity: 1,
+        finish: "normal",
+        card: sampleCard,
+        forSale: true,
+        condition: "LP",
+        askingPrice: 8.5,
+      });
+    expect(updated.status).toBe(200);
+    expect(updated.body.entry.forSale).toBe(true);
+    expect(updated.body.entry.condition).toBe("LP");
+    expect(updated.body.entry.askingPrice).toBe(8.5);
+  });
+
+  it("restores a full collection backup", async () => {
+    const app = createApp({ searchCards: vi.fn(async () => []) });
+    await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 1 });
+
+    const restore = await request(app)
+      .put("/api/collection")
+      .send({
+        entries: [
+          {
+            id: `${sampleCard.editionId}:foil`,
+            editionId: sampleCard.editionId,
+            finish: "foil",
+            quantity: 3,
+            card: sampleCard,
+            updatedAt: new Date().toISOString(),
+            forSale: true,
+            condition: "NM",
+            askingPrice: 4,
+          },
+        ],
+      });
+    expect(restore.status).toBe(200);
+    expect(restore.body.collection.totalCards).toBe(3);
+    expect(restore.body.collection.entries[0].finish).toBe("foil");
+  });
+
+  it("bulk marks lines for sale", async () => {
+    const app = createApp({ searchCards: vi.fn(async () => []) });
+    const created = await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 2 });
+    const id = created.body.entry.id as string;
+    const bulk = await request(app)
+      .post("/api/collection/bulk-sale")
+      .send({ ids: [id], forSale: true });
+    expect(bulk.status).toBe(200);
+    expect(bulk.body.collection.entries[0].forSale).toBe(true);
+  });
+
+  it("bulk deletes lines", async () => {
+    const app = createApp({ searchCards: vi.fn(async () => []) });
+    const created = await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 2 });
+    const id = created.body.entry.id as string;
+    const bulk = await request(app)
+      .post("/api/collection/bulk-delete")
+      .send({ ids: [id] });
+    expect(bulk.status).toBe(200);
+    expect(bulk.body.collection.totalCards).toBe(0);
+  });
+
+  it("stores a note on an entry", async () => {
+    const app = createApp({ searchCards: vi.fn(async () => []) });
+    const created = await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 1 });
+    const id = created.body.entry.id as string;
+    const updated = await request(app)
+      .put(`/api/collection/${encodeURIComponent(id)}`)
+      .send({
+        quantity: 1,
+        finish: "normal",
+        card: sampleCard,
+        note: "Want NM only",
+      });
+    expect(updated.status).toBe(200);
+    expect(updated.body.entry.note).toBe("Want NM only");
+  });
+
   it("deletes a collection entry", async () => {
     const app = createApp({ searchCards: vi.fn(async () => []) });
-    await request(app).post("/api/collection").send({ card: sampleCard, quantity: 1 });
-    const res = await request(app).delete(`/api/collection/${sampleCard.editionId}`);
+    const created = await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 1 });
+    const id = created.body.entry.id as string;
+    const res = await request(app).delete(`/api/collection/${id}`);
     expect(res.status).toBe(200);
     expect(res.body.collection.totalCards).toBe(0);
   });
