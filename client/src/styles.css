@@ -145,6 +145,13 @@ input {
   text-align: center;
 }
 
+.camera__tip {
+  margin: 0;
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+
 .btn {
   border: 0;
   border-radius: 999px;
@@ -308,6 +315,47 @@ input {
   color: var(--ink-soft);
 }
 
+.price-block {
+  margin-top: 0.75rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: 14px;
+  background: rgba(184, 106, 47, 0.12);
+}
+
+.price-block__main {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.price-block__label {
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--copper-deep);
+  font-weight: 700;
+}
+
+.price-block__value {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+}
+
+.price-block__meta {
+  margin: 0.25rem 0 0;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+
+.price-block__link {
+  display: inline-block;
+  margin-top: 0.35rem;
+  color: var(--copper-deep);
+  font-weight: 650;
+  font-size: 0.88rem;
+}
+
 .qty-sheet {
   position: sticky;
   bottom: 4.6rem;
@@ -421,6 +469,25 @@ input {
 .collection-row__qty {
   font-family: var(--font-display);
   font-size: 1.2rem;
+}
+
+.collection-row__right {
+  display: grid;
+  justify-items: end;
+  gap: 0.15rem;
+}
+
+.collection-row__line {
+  font-size: 0.82rem;
+  color: var(--copper-deep);
+  font-weight: 650;
+}
+
+.collection-row__link {
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+  text-decoration: none;
+  font-weight: 700;
 }
 
 .empty {
