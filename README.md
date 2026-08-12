@@ -33,7 +33,9 @@ The APK is a standalone Capacitor app: it calls `api.gatcg.com` directly and sto
 
 ### Install a prebuilt debug APK
 
-Sideload `ArchiveBinder-ga-debug.apk` (allow installs from unknown sources). Grant **Camera** when prompted. Use name search if OCR misses.
+Download: [`releases/ArchiveBinder-ga-debug.apk`](./releases/ArchiveBinder-ga-debug.apk)
+
+Sideload it (allow installs from unknown sources). Grant **Camera** when prompted. Use name search if OCR misses.
 
 ### Build the APK yourself
 
