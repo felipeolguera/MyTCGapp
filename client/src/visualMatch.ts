@@ -193,6 +193,8 @@ export async function matchCardVisually(
     return (await visualPromise).slice(0, limit);
   }
 
+  // OCR is optional and non-blocking: if the worker isn't ready / times out,
+  // we keep the visual ranking so the UI never sticks on "Matching…".
   const [visual, ocrName] = await Promise.all([
     visualPromise,
     ocrCardName(photo).catch(() => ""),

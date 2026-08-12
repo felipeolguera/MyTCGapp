@@ -747,7 +747,7 @@ export function App() {
       </div>
     ) : scanLayout === "card" && phase === "recognizing" ? (
       <div className="camera__match-overlay camera__match-overlay--busy">
-        Reading name…
+        Matching…
       </div>
     ) : showCardChoices ? (
       <MatchChoicePopup

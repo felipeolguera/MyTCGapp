@@ -1,42 +1,84 @@
 import { createWorker, PSM, type Worker } from "tesseract.js";
 
-let workerPromise: Promise<Worker> | null = null;
+const INIT_TIMEOUT_MS = 8_000;
+const RECOGNIZE_TIMEOUT_MS = 2_000;
+
+let readyWorker: Worker | null = null;
+let warming = false;
+/** After a hang/fail, skip OCR for the rest of the session (visual match still works). */
+let ocrDisabled = false;
 
 function assetBase(): string {
   const base = import.meta.env.BASE_URL || "./";
   return base.endsWith("/") ? base : `${base}/`;
 }
 
-async function getWorker(): Promise<Worker> {
-  if (!workerPromise) {
-    const base = assetBase();
-    workerPromise = (async () => {
-      const worker = await createWorker("eng", 1, {
-        workerPath: `${base}tesseract/worker.min.js`,
-        corePath: `${base}tesseract/tesseract-core-simd-lstm.wasm.js`,
-        langPath: `${base}tessdata`,
-        // gzip traineddata is shipped as eng.traineddata.gz
-        gzip: true,
-      });
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+    promise.then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        window.clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
+function disableOcr(reason: unknown): void {
+  ocrDisabled = true;
+  readyWorker = null;
+  warming = false;
+  if (import.meta.env.DEV) {
+    console.warn("[nameOcr] disabled:", reason);
+  }
+}
+
+/** True once the OCR worker finished loading (false while warming / disabled). */
+export function isNameOcrReady(): boolean {
+  return readyWorker !== null && !ocrDisabled;
+}
+
+/**
+ * Warm OCR in the background after the visual index loads.
+ * Scans never wait on this — if it fails, matching stays visual-only.
+ */
+export function warmNameOcr(): void {
+  if (ocrDisabled || readyWorker || warming) return;
+  warming = true;
+  const base = assetBase();
+
+  void (async () => {
+    try {
+      // Capacitor WebViews often hang on blob workers + SIMD WASM.
+      const worker = await withTimeout(
+        createWorker("eng", 1, {
+          workerPath: `${base}tesseract/worker.min.js`,
+          corePath: `${base}tesseract/tesseract-core-lstm.wasm.js`,
+          langPath: `${base}tessdata`,
+          gzip: true,
+          workerBlobURL: false,
+        }),
+        INIT_TIMEOUT_MS,
+        "OCR init",
+      );
       await worker.setParameters({
         tessedit_pageseg_mode: PSM.SINGLE_LINE,
         tessedit_char_whitelist:
           "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 '-",
       });
-      return worker;
-    })().catch((err) => {
-      workerPromise = null;
-      throw err;
-    });
-  }
-  return workerPromise;
-}
-
-/** Warm OCR in the background after the visual index loads. */
-export function warmNameOcr(): void {
-  void getWorker().catch(() => {
-    // Best-effort — visual match still works offline/on failure.
-  });
+      readyWorker = worker;
+      warming = false;
+    } catch (err) {
+      disableOcr(err);
+    }
+  })();
 }
 
 /**
@@ -113,17 +155,30 @@ export async function cropCardNameBand(photo: Blob): Promise<Blob> {
   return blob;
 }
 
-/** OCR only the top name band of a card photo. */
+/**
+ * OCR only the top name band. Returns "" immediately if OCR isn't ready yet,
+ * and never blocks longer than RECOGNIZE_TIMEOUT_MS.
+ */
 export async function ocrCardName(photo: Blob): Promise<string> {
-  const band = await cropCardNameBand(photo);
-  const worker = await getWorker();
-  const result = await worker.recognize(band);
-  const text = (result.data.text || "")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return text;
+  const worker = readyWorker;
+  if (ocrDisabled || !worker) return "";
+  try {
+    const band = await cropCardNameBand(photo);
+    const result = await withTimeout(
+      worker.recognize(band),
+      RECOGNIZE_TIMEOUT_MS,
+      "OCR recognize",
+    );
+    return (result.data.text || "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+  } catch (err) {
+    // Recognize hang/fail — stop using OCR this session so snaps stay snappy.
+    disableOcr(err);
+    return "";
+  }
 }
