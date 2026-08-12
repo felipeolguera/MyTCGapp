@@ -4,6 +4,7 @@ interface QuantityPadProps {
   onSaveNext: () => void;
   saving?: boolean;
   disabled?: boolean;
+  saveLabel?: string;
 }
 
 export function QuantityPad({
@@ -12,6 +13,7 @@ export function QuantityPad({
   onSaveNext,
   saving,
   disabled,
+  saveLabel = "Save & Next",
 }: QuantityPadProps) {
   function press(digit: string) {
     if (disabled || saving) return;
@@ -64,7 +66,7 @@ export function QuantityPad({
                 disabled={disabled || saving || value === "0"}
                 data-testid="save-next"
               >
-                {saving ? "Saving…" : "Save & Next"}
+                {saving ? "Saving…" : saveLabel}
               </button>
             );
           }
