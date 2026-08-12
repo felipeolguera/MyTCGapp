@@ -47,22 +47,27 @@ const rows: ExportRow[] = [
 ];
 
 describe("exportCollection", () => {
-  it("builds CSV with escaped names and finish columns", () => {
+  it("builds CSV with card name, code, unit price, qty, total", () => {
     const csv = buildCollectionCsv(rows);
-    expect(csv).toContain("Name,Set,Set Code");
-    expect(csv).toContain('"Spirit of ""Slime"""');
-    expect(csv).toContain("Foil,2,4.50,9.00");
+    expect(csv).toContain(
+      "Card name,Code,Unit price,Total quantity,Total price",
+    );
+    expect(csv).toContain('"Spirit of ""Slime"" (Foil)"');
+    expect(csv).toContain("ReC-SLM-001,4.50,2,9.00");
   });
 
-  it("builds a shareable inventory text", () => {
+  it("builds a shareable inventory with the same columns", () => {
     const text = buildCollectionShareText(rows, {
       cards: 2,
       unique: 1,
       market: 9,
       priced: 1,
     });
-    expect(text).toContain("Archive Binder");
-    expect(text).toContain("Spirit of \"Slime\" (Foil) ×2");
-    expect(text).toContain("$9.00");
+    expect(text).toContain(
+      "Card name | Code | Unit price | Total quantity | Total price",
+    );
+    expect(text).toContain(
+      'Spirit of "Slime" (Foil) | ReC-SLM-001 | $4.50 | 2 | $9.00',
+    );
   });
 });

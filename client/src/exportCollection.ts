@@ -15,68 +15,69 @@ function csvEscape(value: string): string {
   return value;
 }
 
-/** Spreadsheet-ready inventory for buyers / marketplaces. */
+/** Display name; foil copies are labeled so buyers can tell finishes apart. */
+export function exportCardName(entry: CollectionEntry): string {
+  const base = entry.card.name;
+  return entry.finish === "foil" ? `${base} (${finishLabel(entry.finish)})` : base;
+}
+
+/** Set code + collector number, e.g. ReC-SLM-001 */
+export function exportCardCode(entry: CollectionEntry): string {
+  const prefix = entry.card.setPrefix.trim() || "GA";
+  const num = entry.card.collectorNumber.trim() || "?";
+  return `${prefix}-${num}`;
+}
+
+/** Spreadsheet inventory: Card name, Code, Unit price, Total quantity, Total price. */
 export function buildCollectionCsv(rows: ExportRow[]): string {
   const header = [
-    "Name",
-    "Set",
-    "Set Code",
-    "Collector Number",
-    "Finish",
-    "Quantity",
-    "Market USD",
-    "Line Total USD",
-    "TCGPlayer URL",
+    "Card name",
+    "Code",
+    "Unit price",
+    "Total quantity",
+    "Total price",
   ];
   const lines = [header.join(",")];
-  for (const { entry, unit, line, url } of rows) {
+  for (const { entry, unit, line } of rows) {
     lines.push(
       [
-        csvEscape(entry.card.name),
-        csvEscape(entry.card.setName),
-        csvEscape(entry.card.setPrefix),
-        csvEscape(entry.card.collectorNumber),
-        csvEscape(finishLabel(entry.finish)),
-        String(entry.quantity),
+        csvEscape(exportCardName(entry)),
+        csvEscape(exportCardCode(entry)),
         unit != null ? unit.toFixed(2) : "",
+        String(entry.quantity),
         line != null ? line.toFixed(2) : "",
-        csvEscape(url ?? ""),
       ].join(","),
     );
   }
   return `${lines.join("\n")}\n`;
 }
 
-/** Human-readable list for Discord / SMS / Notes. */
+/** Human-readable list with the same columns for Discord / SMS / Notes. */
 export function buildCollectionShareText(
   rows: ExportRow[],
   totals: { cards: number; unique: number; market: number; priced: number },
 ): string {
   const dated = new Date().toISOString().slice(0, 10);
   const lines = [
-    `Archive Binder — Grand Archive collection`,
+    `Archive Binder — Grand Archive for sale`,
     `Exported ${dated}`,
-    `${totals.cards} cards · ${totals.unique} unique · ~${formatUsd(totals.market)} market (${totals.priced}/${totals.unique} priced)`,
+    `${totals.cards} cards · ~${formatUsd(totals.market)} total`,
     "",
+    "Card name | Code | Unit price | Total quantity | Total price",
   ];
 
   for (const { entry, unit, line } of rows) {
-    const finish = finishLabel(entry.finish);
-    const set = `${entry.card.setPrefix} #${entry.card.collectorNumber}`;
-    const priceBits = [
-      unit != null ? formatUsd(unit) : null,
-      line != null && entry.quantity > 1 ? `line ${formatUsd(line)}` : null,
-    ]
-      .filter(Boolean)
-      .join(" · ");
     lines.push(
-      `• ${entry.card.name} (${finish}) ×${entry.quantity} — ${set}${
-        priceBits ? ` — ${priceBits}` : ""
-      }`,
+      [
+        exportCardName(entry),
+        exportCardCode(entry),
+        unit != null ? formatUsd(unit) : "—",
+        String(entry.quantity),
+        line != null ? formatUsd(line) : "—",
+      ].join(" | "),
     );
   }
 
-  lines.push("", "Prices are TCGPlayer market estimates and may change.");
   return lines.join("\n");
 }
 

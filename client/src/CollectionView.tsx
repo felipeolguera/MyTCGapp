@@ -125,8 +125,7 @@ export function CollectionView({
       </header>
 
       <p className="collection-view__export-hint muted">
-        Export shares a sellable inventory list and CSV (name, set, finish, qty,
-        market price, TCGPlayer link).
+        Export: card name, code, unit price, total quantity, total price.
       </p>
 
       <ul className="collection-list">
