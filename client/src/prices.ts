@@ -103,7 +103,7 @@ function abbrScore(cardPrefix: string, groupAbbr: string): number {
 
 /**
  * Find the best TCGPlayer market price for a GA edition.
- * Prefers Normal printing; falls back to any printing with a market price.
+ * Prefers the requested printing (Normal/Foil); falls back to any priced printing.
  */
 export function lookupCardPrice(
   index: PriceIndex,
@@ -152,4 +152,8 @@ export function lookupCardPrice(
 export function formatUsd(value: number | null | undefined): string {
   if (value == null || Number.isNaN(value)) return "—";
   return `$${value.toFixed(2)}`;
+}
+
+export function finishToPrinting(finish: "normal" | "foil"): string {
+  return finish === "foil" ? "Foil" : "Normal";
 }

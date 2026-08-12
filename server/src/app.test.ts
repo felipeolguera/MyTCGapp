@@ -62,6 +62,7 @@ describe("Grand Archive collection API", () => {
       .send({ card: sampleCard, quantity: 2 });
     expect(first.status).toBe(201);
     expect(first.body.entry.quantity).toBe(2);
+    expect(first.body.entry.finish).toBe("normal");
     expect(first.body.collection.totalCards).toBe(2);
 
     const second = await request(app)
@@ -71,6 +72,21 @@ describe("Grand Archive collection API", () => {
     expect(second.body.entry.quantity).toBe(5);
     expect(second.body.collection.uniqueCards).toBe(1);
     expect(second.body.collection.totalCards).toBe(5);
+  });
+
+  it("tracks foil and normal as separate entries", async () => {
+    const app = createApp({ searchCards: vi.fn(async () => []) });
+    await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 1, finish: "normal" });
+    const foil = await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 2, finish: "foil" });
+    expect(foil.status).toBe(201);
+    expect(foil.body.entry.finish).toBe("foil");
+    expect(foil.body.entry.quantity).toBe(2);
+    expect(foil.body.collection.uniqueCards).toBe(2);
+    expect(foil.body.collection.totalCards).toBe(3);
   });
 
   it("rejects invalid quantity on add", async () => {
@@ -83,25 +99,31 @@ describe("Grand Archive collection API", () => {
 
   it("sets absolute quantity and removes at zero", async () => {
     const app = createApp({ searchCards: vi.fn(async () => []) });
-    await request(app).post("/api/collection").send({ card: sampleCard, quantity: 4 });
+    const created = await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 4 });
+    const id = created.body.entry.id as string;
 
     const updated = await request(app)
-      .put(`/api/collection/${sampleCard.editionId}`)
-      .send({ quantity: 1 });
+      .put(`/api/collection/${id}`)
+      .send({ quantity: 1, finish: "normal", card: sampleCard });
     expect(updated.status).toBe(200);
     expect(updated.body.entry.quantity).toBe(1);
 
     const cleared = await request(app)
-      .put(`/api/collection/${sampleCard.editionId}`)
-      .send({ quantity: 0 });
+      .put(`/api/collection/${id}`)
+      .send({ quantity: 0, finish: "normal", card: sampleCard });
     expect(cleared.status).toBe(200);
     expect(cleared.body.collection.uniqueCards).toBe(0);
   });
 
   it("deletes a collection entry", async () => {
     const app = createApp({ searchCards: vi.fn(async () => []) });
-    await request(app).post("/api/collection").send({ card: sampleCard, quantity: 1 });
-    const res = await request(app).delete(`/api/collection/${sampleCard.editionId}`);
+    const created = await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 1 });
+    const id = created.body.entry.id as string;
+    const res = await request(app).delete(`/api/collection/${id}`);
     expect(res.status).toBe(200);
     expect(res.body.collection.totalCards).toBe(0);
   });

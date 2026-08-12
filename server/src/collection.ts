@@ -1,12 +1,20 @@
-import type { CollectionEntry, CollectionSummary, GaCardEdition } from "./types.js";
+import type {
+  CardFinish,
+  CollectionEntry,
+  CollectionSummary,
+  GaCardEdition,
+} from "./types.js";
+import { collectionEntryId } from "./types.js";
 
 export function createCollectionStore() {
   const entries = new Map<string, CollectionEntry>();
 
   function summary(): CollectionSummary {
-    const list = [...entries.values()].sort((a, b) =>
-      a.card.name.localeCompare(b.card.name),
-    );
+    const list = [...entries.values()].sort((a, b) => {
+      const name = a.card.name.localeCompare(b.card.name);
+      if (name) return name;
+      return a.finish.localeCompare(b.finish);
+    });
     return {
       entries: list,
       uniqueCards: list.length,
@@ -14,49 +22,60 @@ export function createCollectionStore() {
     };
   }
 
-  function upsert(card: GaCardEdition, quantity: number): CollectionEntry {
+  function upsert(
+    card: GaCardEdition,
+    quantity: number,
+    finish: CardFinish = "normal",
+  ): CollectionEntry {
     if (!Number.isInteger(quantity) || quantity < 0) {
       throw new Error("Quantity must be a non-negative integer");
     }
 
+    const id = collectionEntryId(card.editionId, finish);
     if (quantity === 0) {
-      entries.delete(card.editionId);
+      entries.delete(id);
       return {
+        id,
         editionId: card.editionId,
+        finish,
         quantity: 0,
         card,
         updatedAt: new Date().toISOString(),
       };
     }
 
-    const existing = entries.get(card.editionId);
     const entry: CollectionEntry = {
+      id,
       editionId: card.editionId,
+      finish,
       quantity,
-      card: existing?.card ?? card,
+      card,
       updatedAt: new Date().toISOString(),
     };
-    // Prefer freshest card payload when provided.
-    entry.card = card;
-    entries.set(card.editionId, entry);
+    entries.set(id, entry);
     return entry;
   }
 
-  function add(card: GaCardEdition, quantity: number): CollectionEntry {
+  function add(
+    card: GaCardEdition,
+    quantity: number,
+    finish: CardFinish = "normal",
+  ): CollectionEntry {
     if (!Number.isInteger(quantity) || quantity < 1) {
       throw new Error("Quantity must be a positive integer");
     }
-    const existing = entries.get(card.editionId);
+    const id = collectionEntryId(card.editionId, finish);
+    const existing = entries.get(id);
     const nextQty = (existing?.quantity ?? 0) + quantity;
-    return upsert(card, nextQty);
+    return upsert(card, nextQty, finish);
   }
 
-  function remove(editionId: string): boolean {
-    return entries.delete(editionId);
+  function remove(id: string): boolean {
+    return entries.delete(id);
   }
 
-  function get(editionId: string): CollectionEntry | undefined {
-    return entries.get(editionId);
+  function get(id: string): CollectionEntry | undefined {
+    return entries.get(id);
   }
 
   return { summary, upsert, add, remove, get };

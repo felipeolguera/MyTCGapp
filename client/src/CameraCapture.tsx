@@ -59,7 +59,6 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    // Crop to a card-shaped center region for cleaner OCR.
     const cropW = Math.floor(canvas.width * 0.72);
     const cropH = Math.floor(cropW * 1.4);
     const sx = Math.floor((canvas.width - cropW) / 2);
@@ -107,16 +106,18 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
             <div className="camera__guide" aria-hidden="true" />
           </>
         )}
+
+        <button
+          type="button"
+          className="camera__shutter"
+          onClick={() => void handleSnap()}
+          disabled={disabled || !ready || Boolean(error)}
+          aria-label="Snap card"
+        >
+          <span className="camera__shutter-ring" aria-hidden="true" />
+        </button>
       </div>
       <p className="camera__tip">Fill the guide · avoid glare · hold steady</p>
-      <button
-        type="button"
-        className="btn btn--snap"
-        onClick={() => void handleSnap()}
-        disabled={disabled || !ready || Boolean(error)}
-      >
-        Snap card
-      </button>
     </div>
   );
 }

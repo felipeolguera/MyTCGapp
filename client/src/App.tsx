@@ -6,6 +6,7 @@ import { CollectionView } from "./CollectionView";
 import { loadCardIndex, matchCardVisually } from "./visualMatch";
 import type {
   CollectionSummary,
+  CardFinish,
   GaCardEdition,
   ScanPhase,
   TabId,
@@ -20,6 +21,7 @@ export function App() {
   const [matchScores, setMatchScores] = useState<Record<string, number>>({});
   const [selected, setSelected] = useState<GaCardEdition | null>(null);
   const [quantity, setQuantity] = useState("1");
+  const [finish, setFinish] = useState<CardFinish>("normal");
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +64,7 @@ export function App() {
     setResults([]);
     setMatchScores({});
     setQuantity("1");
+    setFinish("normal");
     setBusy(false);
     setSaving(false);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -90,6 +93,7 @@ export function App() {
       setSelected(cards[0]);
       setPhase("detail");
       setQuantity("1");
+      setFinish("normal");
       setStatus(`Matched “${cards[0].name}” (${Math.round(best.score * 100)}%)`);
       return;
     }
@@ -97,6 +101,7 @@ export function App() {
       setSelected(cards[0]);
       setPhase("detail");
       setQuantity("1");
+      setFinish("normal");
       setStatus(`Matched “${cards[0].name}” (${Math.round(best.score * 100)}%)`);
       return;
     }
@@ -139,6 +144,7 @@ export function App() {
         setSelected(unique[0]);
         setPhase("detail");
         setQuantity("1");
+        setFinish("normal");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Search failed");
@@ -184,10 +190,12 @@ export function App() {
     setSaving(true);
     setError(null);
     try {
-      const { collection: next } = await addToCollection(selected, qty);
+      const { collection: next } = await addToCollection(selected, qty, finish);
       setCollection(next);
       setSessionAdds((n) => n + qty);
-      setStatus(`Added ×${qty} ${selected.name}`);
+      setStatus(
+        `Added ×${qty} ${selected.name} (${finish === "foil" ? "Foil" : "Normal"})`,
+      );
       resetScan(true);
       setPhase("ready");
     } catch (err) {
@@ -224,7 +232,9 @@ export function App() {
               <CardDetail
                 card={selected}
                 quantity={quantity}
+                finish={finish}
                 onQuantityChange={setQuantity}
+                onFinishChange={setFinish}
                 onSaveNext={() => void handleSaveNext()}
                 onBack={() => {
                   setSelected(null);
@@ -291,6 +301,7 @@ export function App() {
                             onClick={() => {
                               setSelected(card);
                               setQuantity("1");
+                              setFinish("normal");
                               setPhase("detail");
                               setStatus(null);
                             }}

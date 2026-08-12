@@ -22,8 +22,14 @@ export interface GaCardEdition {
   illustrator: string | null;
 }
 
+/** Physical finish selected when adding to the collection. */
+export type CardFinish = "normal" | "foil";
+
 export interface CollectionEntry {
+  /** Composite id: `${editionId}:${finish}` */
+  id: string;
   editionId: string;
+  finish: CardFinish;
   quantity: number;
   card: GaCardEdition;
   updatedAt: string;
@@ -43,3 +49,14 @@ export type ScanPhase =
   | "recognizing"
   | "results"
   | "detail";
+
+export function collectionEntryId(
+  editionId: string,
+  finish: CardFinish,
+): string {
+  return `${editionId}:${finish}`;
+}
+
+export function finishLabel(finish: CardFinish): string {
+  return finish === "foil" ? "Foil" : "Normal";
+}

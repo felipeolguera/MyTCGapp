@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import type { GaCardEdition } from "./types";
+import type { CardFinish, GaCardEdition } from "./types";
+import { finishLabel } from "./types";
 import { QuantityPad } from "./QuantityPad";
 import {
+  finishToPrinting,
   formatUsd,
   loadPriceIndex,
   lookupCardPrice,
@@ -20,7 +22,9 @@ const RARITY_LABEL: Record<number, string> = {
 interface CardDetailProps {
   card: GaCardEdition;
   quantity: string;
+  finish: CardFinish;
   onQuantityChange: (value: string) => void;
+  onFinishChange: (finish: CardFinish) => void;
   onSaveNext: () => void;
   onBack: () => void;
   saving?: boolean;
@@ -29,7 +33,9 @@ interface CardDetailProps {
 export function CardDetail({
   card,
   quantity,
+  finish,
   onQuantityChange,
+  onFinishChange,
   onSaveNext,
   onBack,
   saving,
@@ -45,7 +51,7 @@ export function CardDetail({
     void loadPriceIndex()
       .then((index) => {
         if (cancelled) return;
-        const hit = lookupCardPrice(index, card);
+        const hit = lookupCardPrice(index, card, finishToPrinting(finish));
         setPrice(hit);
         setPriceStatus(hit?.market != null ? "ready" : "missing");
       })
@@ -55,7 +61,7 @@ export function CardDetail({
     return () => {
       cancelled = true;
     };
-  }, [card]);
+  }, [card, finish]);
 
   const lineTotal =
     price?.market != null ? price.market * Math.max(1, Number(quantity) || 1) : null;
@@ -81,6 +87,27 @@ export function CardDetail({
           {card.setPrefix} · #{card.collectorNumber}
           {card.setName ? ` · ${card.setName}` : ""}
         </p>
+
+        <div
+          className="finish-toggle"
+          role="group"
+          aria-label="Card finish"
+        >
+          {(["normal", "foil"] as CardFinish[]).map((option) => (
+            <button
+              key={option}
+              type="button"
+              className={
+                finish === option
+                  ? "finish-toggle__btn finish-toggle__btn--active"
+                  : "finish-toggle__btn"
+              }
+              onClick={() => onFinishChange(option)}
+            >
+              {finishLabel(option)}
+            </button>
+          ))}
+        </div>
 
         <div className="price-block" data-testid="tcgplayer-price">
           <div className="price-block__main">

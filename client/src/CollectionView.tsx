@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CollectionSummary } from "./types";
+import { finishLabel } from "./types";
 import {
+  finishToPrinting,
   formatUsd,
   loadPriceIndex,
   lookupCardPrice,
@@ -29,17 +31,16 @@ export function CollectionView({
   const priced = useMemo(() => {
     if (!collection) return [];
     return collection.entries.map((entry) => {
-      const price = index ? lookupCardPrice(index, entry.card) : null;
+      const price = index
+        ? lookupCardPrice(index, entry.card, finishToPrinting(entry.finish))
+        : null;
       const unit = price?.market ?? null;
       const line = unit != null ? unit * entry.quantity : null;
       return { entry, unit, line, url: price?.url ?? null };
     });
   }, [collection, index]);
 
-  const totalValue = priced.reduce(
-    (sum, row) => sum + (row.line ?? 0),
-    0,
-  );
+  const totalValue = priced.reduce((sum, row) => sum + (row.line ?? 0), 0);
   const pricedCount = priced.filter((r) => r.line != null).length;
 
   if (loading && !collection) {
@@ -77,7 +78,7 @@ export function CollectionView({
 
       <ul className="collection-list">
         {priced.map(({ entry, unit, line, url }) => (
-          <li key={entry.editionId} className="collection-row">
+          <li key={entry.id} className="collection-row">
             <img
               src={entry.card.imageUrl}
               alt=""
@@ -85,7 +86,18 @@ export function CollectionView({
               loading="lazy"
             />
             <div className="collection-row__body">
-              <span className="collection-row__name">{entry.card.name}</span>
+              <span className="collection-row__name">
+                {entry.card.name}
+                <span
+                  className={
+                    entry.finish === "foil"
+                      ? "finish-pill finish-pill--foil"
+                      : "finish-pill"
+                  }
+                >
+                  {finishLabel(entry.finish)}
+                </span>
+              </span>
               <span className="collection-row__set">
                 {entry.card.setPrefix} #{entry.card.collectorNumber}
                 {unit != null ? ` · ${formatUsd(unit)}` : ""}

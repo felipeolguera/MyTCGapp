@@ -2,7 +2,8 @@ import express, { type Request, type Response } from "express";
 import cors from "cors";
 import { createCollectionStore } from "./collection.js";
 import { searchGaCards } from "./gatcg.js";
-import type { GaCardEdition } from "./types.js";
+import type { CardFinish, GaCardEdition } from "./types.js";
+import { collectionEntryId } from "./types.js";
 
 export function createApp(
   deps: {
@@ -54,12 +55,13 @@ export function createApp(
 
   /**
    * Add scanned cards to the collection.
-   * Body: { card: GaCardEdition, quantity: number }
-   * Quantity is added to any existing copies of the same edition.
+   * Body: { card: GaCardEdition, quantity: number, finish?: "normal"|"foil" }
    */
   app.post("/api/collection", (req: Request, res: Response) => {
     const quantity = Number(req.body?.quantity);
     const card = req.body?.card as GaCardEdition | undefined;
+    const finishRaw = String(req.body?.finish ?? "normal");
+    const finish: CardFinish = finishRaw === "foil" ? "foil" : "normal";
 
     if (!card?.editionId || !card?.name) {
       res.status(400).json({ error: "Body must include a card with editionId and name" });
@@ -71,7 +73,7 @@ export function createApp(
     }
 
     try {
-      const entry = collection.add(card, quantity);
+      const entry = collection.add(card, quantity, finish);
       res.status(201).json({ entry, collection: collection.summary() });
     } catch (err) {
       res.status(400).json({
@@ -80,11 +82,13 @@ export function createApp(
     }
   });
 
-  /** Set absolute quantity (0 removes). */
-  app.put("/api/collection/:editionId", (req: Request, res: Response) => {
+  /** Set absolute quantity (0 removes). Path param is `${editionId}:${finish}`. */
+  app.put("/api/collection/:id", (req: Request, res: Response) => {
     const quantity = Number(req.body?.quantity);
     const card = req.body?.card as GaCardEdition | undefined;
-    const existing = collection.get(req.params.editionId);
+    const existing = collection.get(req.params.id);
+    const finishRaw = String(req.body?.finish ?? existing?.finish ?? "normal");
+    const finish: CardFinish = finishRaw === "foil" ? "foil" : "normal";
 
     if (!Number.isInteger(quantity) || quantity < 0 || quantity > 999) {
       res.status(400).json({ error: "quantity must be an integer from 0 to 999" });
@@ -96,13 +100,14 @@ export function createApp(
       res.status(400).json({ error: "card payload required when entry does not exist" });
       return;
     }
-    if (cardPayload.editionId !== req.params.editionId) {
-      res.status(400).json({ error: "card.editionId must match URL" });
+    const expectedId = collectionEntryId(cardPayload.editionId, finish);
+    if (req.params.id.includes(":") && req.params.id !== expectedId) {
+      res.status(400).json({ error: "card/finish must match URL id" });
       return;
     }
 
     try {
-      const entry = collection.upsert(cardPayload, quantity);
+      const entry = collection.upsert(cardPayload, quantity, finish);
       res.json({ entry, collection: collection.summary() });
     } catch (err) {
       res.status(400).json({
@@ -111,8 +116,8 @@ export function createApp(
     }
   });
 
-  app.delete("/api/collection/:editionId", (req: Request, res: Response) => {
-    const removed = collection.remove(req.params.editionId);
+  app.delete("/api/collection/:id", (req: Request, res: Response) => {
+    const removed = collection.remove(req.params.id);
     if (!removed) {
       res.status(404).json({ error: "Card not in collection" });
       return;

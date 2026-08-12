@@ -23,8 +23,12 @@ export interface GaCardEdition {
   illustrator: string | null;
 }
 
+export type CardFinish = "normal" | "foil";
+
 export interface CollectionEntry {
+  id: string;
   editionId: string;
+  finish: CardFinish;
   quantity: number;
   card: GaCardEdition;
   updatedAt: string;
@@ -34,4 +38,11 @@ export interface CollectionSummary {
   entries: CollectionEntry[];
   totalCards: number;
   uniqueCards: number;
+}
+
+export function collectionEntryId(
+  editionId: string,
+  finish: CardFinish,
+): string {
+  return `${editionId}:${finish}`;
 }
