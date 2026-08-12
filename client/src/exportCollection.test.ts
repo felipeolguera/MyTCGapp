@@ -30,44 +30,68 @@ const card: GaCardEdition = {
   illustrator: null,
 };
 
-const rows: ExportRow[] = [
-  {
-    entry: {
-      id: "ed-1:foil",
-      editionId: "ed-1",
-      finish: "foil",
-      quantity: 2,
-      card,
-      updatedAt: "2026-01-01T00:00:00.000Z",
-    },
-    unit: 4.5,
-    line: 9,
-    url: "https://www.tcgplayer.com/product/1",
+const foilRow: ExportRow = {
+  entry: {
+    id: "ed-1:foil",
+    editionId: "ed-1",
+    finish: "foil",
+    quantity: 2,
+    card,
+    updatedAt: "2026-01-01T00:00:00.000Z",
   },
-];
+  unit: 4.5,
+  line: 9,
+  url: "https://www.tcgplayer.com/product/1",
+};
+
+const normalRow: ExportRow = {
+  entry: {
+    id: "ed-1:normal",
+    editionId: "ed-1",
+    finish: "normal",
+    quantity: 3,
+    card,
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  unit: 1.25,
+  line: 3.75,
+  url: "https://www.tcgplayer.com/product/1",
+};
+
+const totals = {
+  cards: 5,
+  unique: 2,
+  market: 12.75,
+  priced: 2,
+};
 
 describe("exportCollection", () => {
-  it("builds CSV with card name, code, unit price, qty, total", () => {
-    const csv = buildCollectionCsv(rows);
+  it("builds CSV with finish labels, sorted rows, and TOTAL", () => {
+    const csv = buildCollectionCsv([foilRow, normalRow], totals);
     expect(csv).toContain(
       "Card name,Code,Unit price,Total quantity,Total price",
     );
+    expect(csv).toContain('"Spirit of ""Slime"" (Normal)"');
     expect(csv).toContain('"Spirit of ""Slime"" (Foil)"');
+    expect(csv).toContain("ReC-SLM-001,1.25,(3pcs),3.75");
     expect(csv).toContain("ReC-SLM-001,4.50,(2pcs),9.00");
+    expect(csv).toContain("TOTAL,,,(5pcs),12.75");
+    // Normal before Foil when names/codes match
+    expect(csv.indexOf("(Normal)")).toBeLessThan(csv.indexOf("(Foil)"));
   });
 
-  it("builds a shareable inventory with the same columns", () => {
-    const text = buildCollectionShareText(rows, {
-      cards: 2,
-      unique: 1,
-      market: 9,
-      priced: 1,
-    });
+  it("builds share text with clear finishes and TOTAL footer", () => {
+    const text = buildCollectionShareText([foilRow, normalRow], totals);
     expect(text).toContain(
       "Card name | Code | Unit price | Total quantity | Total price",
     );
     expect(text).toContain(
+      'Spirit of "Slime" (Normal) | ReC-SLM-001 | $1.25 | (3pcs) | $3.75',
+    );
+    expect(text).toContain(
       'Spirit of "Slime" (Foil) | ReC-SLM-001 | $4.50 | (2pcs) | $9.00',
     );
+    expect(text).toContain("TOTAL |  |  | (5pcs) | $12.75");
+    expect(text).toContain("TCGPlayer market estimates");
   });
 });

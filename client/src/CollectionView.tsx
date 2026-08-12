@@ -62,11 +62,11 @@ export function CollectionView({
         priced: pricedCount,
       });
       if (result.mode === "shared") {
-        onStatus?.("Collection shared");
+        onStatus?.("Collection shared (list + CSV + checklist image)");
       } else if (result.mode === "copied") {
-        onStatus?.("CSV downloaded · list copied to clipboard");
+        onStatus?.("CSV + image downloaded · list copied");
       } else {
-        onStatus?.("CSV downloaded — send that file to buyers");
+        onStatus?.("CSV + checklist image downloaded");
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
@@ -125,7 +125,8 @@ export function CollectionView({
       </header>
 
       <p className="collection-view__export-hint muted">
-        Export: card name, code, unit price, total quantity, total price.
+        Export includes Normal/Foil labels, a TOTAL row, plus a checklist image
+        for Discord or Marketplace.
       </p>
 
       <ul className="collection-list">
