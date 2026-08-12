@@ -7,16 +7,17 @@ Android-first **Grand Archive TCG** collection scanner.
 3. Enter quantity on a 0–9 pad
 4. **Save & Next** adds it to your collection and returns to scan
 
-- **`server/`** — Express + TypeScript API (GATCG search proxy + in-memory collection)
-- **`client/`** — Mobile-first React + Vite UI (camera + OCR + collection)
+- **`server/`** — Express + TypeScript API (GATCG search proxy + in-memory collection) for web/dev
+- **`client/`** — Mobile-first React + Vite UI, wrapped with Capacitor for Android
+- **`client/android/`** — Native Android project (debug APK)
 
 ## Requirements
 
 - Node.js >= 20
 - npm >= 10
-- Camera access in the browser (HTTPS or localhost) for scanning
+- For APK builds: JDK 21+, Android SDK (platform 36 / build-tools)
 
-## Getting started
+## Getting started (web)
 
 ```bash
 npm install
@@ -26,17 +27,38 @@ npm run dev
 Open http://localhost:5173 on your phone (same network) or desktop.
 The Vite dev server proxies `/api/*` to the API on port 3001.
 
+## Android APK
+
+The APK is a standalone Capacitor app: it calls `api.gatcg.com` directly and stores your collection in on-device storage (no local Express server needed).
+
+### Install a prebuilt debug APK
+
+Sideload `ArchiveBinder-ga-debug.apk` (allow installs from unknown sources). Grant **Camera** when prompted. Use name search if OCR misses.
+
+### Build the APK yourself
+
+```bash
+# Requires ANDROID_HOME pointing at an Android SDK
+npm install
+npm run build:apk
+```
+
+APK output:
+
+`client/android/app/build/outputs/apk/debug/app-debug.apk`
+
 ## Useful scripts
 
 | Command | Description |
 | --- | --- |
 | `npm run dev` | API + web client together |
 | `npm run build` | Type-check and build both workspaces |
+| `npm run build:apk` | Standalone web build + Capacitor sync + debug APK |
 | `npm run typecheck` | Type-check both workspaces |
 | `npm run lint` | Lint both workspaces |
-| `npm test` | API tests (Vitest + Supertest) |
+| `npm test` | Unit/API tests |
 
-## API overview
+## API overview (web/dev server)
 
 | Method | Route | Description |
 | --- | --- | --- |
@@ -50,5 +72,5 @@ The Vite dev server proxies `/api/*` to the API on port 3001.
 ## Notes
 
 - Card recognition uses on-device OCR (Tesseract) of the photo, then name search on GATCG. Manual search is always available as a fallback.
-- Collection storage is in-memory for now (resets when the API restarts).
-- Native Android (Kotlin / Expo) can replace the web client later while keeping this API.
+- Web/dev collection storage is in-memory on the API (resets when the API restarts).
+- Android APK collection storage is local to the device.
