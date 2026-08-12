@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildAskingTotalClipboard,
+  buildCartReceiptClipboard,
   buildListingLineClipboard,
   sumAskingTotal,
 } from "./sellHelpers";
@@ -73,5 +74,12 @@ describe("sellHelpers", () => {
     expect(text).toContain("SET-001");
     expect(text).toContain("$5.00");
     expect(text).toContain("(2pcs)");
+  });
+
+  it("builds a multi-line cart receipt", () => {
+    const text = buildCartReceiptClipboard([row(2, 1, 5), row(1, 2, null)]);
+    expect(text).toContain("Archive Binder cart");
+    expect(text).toContain("(3pcs)");
+    expect(text.split("\n").length).toBeGreaterThan(2);
   });
 });

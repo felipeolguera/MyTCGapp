@@ -35,6 +35,17 @@ export function buildListingLineClipboard(row: CollectionListRow): string {
   return `${exportCardName(row.entry)} · ${exportCardCode(row.entry)} · ${price} ${exportQuantity(row.entry.quantity)}`;
 }
 
+/** Multi-line cart/receipt paste for selected rows. */
+export function buildCartReceiptClipboard(rows: CollectionListRow[]): string {
+  const cards = rows.reduce((n, r) => n + r.entry.quantity, 0);
+  const total = sumAskingTotal(rows);
+  const body = rows.map((row) => buildListingLineClipboard(row));
+  return [
+    `Archive Binder cart · ${exportQuantity(cards)} · ${formatUsd(total)}`,
+    ...body,
+  ].join("\n");
+}
+
 export async function copyText(text: string): Promise<void> {
   if (!navigator.clipboard?.writeText) {
     throw new Error("Clipboard unavailable on this device");

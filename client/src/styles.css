@@ -992,9 +992,19 @@ input {
   background: rgba(212, 175, 108, 0.08);
 }
 
+.select-toolbar__summary {
+  display: grid;
+  gap: 0.15rem;
+}
+
 .select-toolbar__count {
   font-weight: 650;
   color: var(--gold);
+}
+
+.select-toolbar__cart {
+  font-size: 0.92rem;
+  color: var(--text);
 }
 
 .select-toolbar__actions {
@@ -1003,7 +1013,8 @@ input {
   flex-wrap: wrap;
 }
 
-.collection-view__backup-meta {
+.collection-view__backup-meta,
+.collection-view__ledger-meta {
   margin: 0.15rem 0 0;
   font-size: 0.8rem;
 }

@@ -1,4 +1,5 @@
 import type { GaCardEdition } from "./types";
+import { readCachedPriceIndex } from "./priceStore";
 
 export interface PriceRow {
   productId: number;
@@ -61,7 +62,6 @@ export function setPrefixCandidates(setPrefix: string): string[] {
   const upper = raw.toUpperCase();
   const out = new Set<string>([upper, upper.replace(/^REC-/, "")]);
 
-  // Common GA → TCGPlayer abbreviation tweaks
   if (upper === "DOA" || upper.startsWith("DOA")) {
     out.add("DOA 1ST");
     out.add("DOA ALTER");
@@ -74,20 +74,52 @@ export function setPrefixCandidates(setPrefix: string): string[] {
   return [...out];
 }
 
+/** Install a price index into the in-memory cache (e.g. after live refresh). */
+export function installPriceIndex(index: PriceIndex): PriceIndex {
+  cached = index;
+  return index;
+}
+
 export async function loadPriceIndex(): Promise<PriceIndex> {
   if (cached) return cached;
   if (!loadPromise) {
     loadPromise = (async () => {
+      const fromDisk = await readCachedPriceIndex();
+      if (fromDisk) return installPriceIndex(fromDisk);
+
       const res = await fetch(`${import.meta.env.BASE_URL}ga-price-index.json`);
       if (!res.ok) {
-        throw new Error("TCGPlayer price index missing — run npm run index:prices");
+        throw new Error(
+          "TCGPlayer price index missing — run npm run index:prices",
+        );
       }
-      const data = (await res.json()) as PriceIndex;
-      cached = data;
-      return data;
-    })();
+      return installPriceIndex((await res.json()) as PriceIndex);
+    })().finally(() => {
+      loadPromise = null;
+    });
   }
   return loadPromise;
+}
+
+export function getLoadedPriceIndex(): PriceIndex | null {
+  return cached;
+}
+
+export function formatPriceIndexAge(
+  index: PriceIndex | null,
+  now = Date.now(),
+): string {
+  if (!index?.generatedAt) return "Prices unavailable";
+  const then = Date.parse(index.generatedAt);
+  if (!Number.isFinite(then)) return "Prices unavailable";
+  const ageMs = Math.max(0, now - then);
+  const mins = Math.floor(ageMs / 60000);
+  if (mins < 1) return "Prices just updated";
+  if (mins < 60) return `Prices ${mins}m old`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 48) return `Prices ${hours}h old`;
+  const days = Math.floor(hours / 24);
+  return `Prices ${days}d old`;
 }
 
 function abbrScore(cardPrefix: string, groupAbbr: string): number {

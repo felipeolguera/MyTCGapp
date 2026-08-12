@@ -34,17 +34,29 @@ import {
 import { QuantityPad } from "./QuantityPad";
 import {
   finishToPrinting,
+  formatPriceIndexAge,
   formatUsd,
+  installPriceIndex,
   loadPriceIndex,
   lookupCardPrice,
   type PriceIndex,
 } from "./prices";
+import { refreshPriceIndexFromTcgcsv } from "./priceRefresh";
 import {
   buildAskingTotalClipboard,
+  buildCartReceiptClipboard,
   buildListingLineClipboard,
   copyText,
   sumAskingTotal,
 } from "./sellHelpers";
+import {
+  buildSaleReceipt,
+  formatLedgerSummary,
+  readSalesLedger,
+  recordSale,
+  type SaleLine,
+} from "./salesLedger";
+import { exportCardCode } from "./exportCollection";
 
 interface CollectionViewProps {
   collection: CollectionSummary | null;
@@ -107,6 +119,10 @@ export function CollectionView({
   const [backupMeta, setBackupMeta] = useState<BackupMeta>(() =>
     readBackupMeta(),
   );
+  const [refreshingPrices, setRefreshingPrices] = useState(false);
+  const [ledgerSummary, setLedgerSummary] = useState(() =>
+    formatLedgerSummary(readSalesLedger()),
+  );
 
   useEffect(() => {
     void loadPriceIndex()
@@ -161,6 +177,31 @@ export function CollectionView({
     sort !== "name";
   const backupReminder = backupReminderMessage(backupMeta);
   const selectedCount = selectedIds.size;
+  const selectedRows = useMemo(
+    () => visible.filter((r) => selectedIds.has(r.entry.id)),
+    [visible, selectedIds],
+  );
+  const cartTotal = sumAskingTotal(selectedRows);
+  const cartCards = selectedRows.reduce((n, r) => n + r.entry.quantity, 0);
+
+  function toSaleLines(
+    rows: Array<{ entry: CollectionEntry; unit: number | null }>,
+    quantityFor: (entry: CollectionEntry) => number,
+  ): SaleLine[] {
+    return rows.map(({ entry, unit }) => ({
+      entryId: entry.id,
+      name: entry.card.name,
+      finish: entry.finish,
+      condition: entry.condition,
+      setCode: exportCardCode(entry),
+      quantity: quantityFor(entry),
+      unitPrice: entry.askingPrice ?? unit,
+    }));
+  }
+
+  function bumpLedger() {
+    setLedgerSummary(formatLedgerSummary(readSalesLedger()));
+  }
 
   function openEditor(entry: CollectionEntry) {
     if (selectMode) {
@@ -382,6 +423,13 @@ export function CollectionView({
     setBulkBusy(true);
     onError?.(null);
     try {
+      const row = priced.find((r) => r.entry.id === entry.id);
+      const unit = entry.askingPrice ?? row?.unit ?? null;
+      recordSale(
+        toSaleLines([{ entry, unit }], () => 1),
+        "sold-one",
+      );
+      bumpLedger();
       const nextQty = entry.quantity - 1;
       if (nextQty < 1) {
         await onDeleteEntry(entry.id);
@@ -396,9 +444,7 @@ export function CollectionView({
           askingPrice: entry.askingPrice,
           note: entry.note,
         });
-        onStatus?.(
-          `Sold −1 · ${entry.card.name} now ×${nextQty}`,
-        );
+        onStatus?.(`Sold −1 · ${entry.card.name} now ×${nextQty}`);
       }
       if (editing?.id === entry.id) closeEditor();
     } catch (err) {
@@ -413,8 +459,12 @@ export function CollectionView({
     setBulkBusy(true);
     onError?.(null);
     try {
-      const selected = visible.filter((r) => selectedIds.has(r.entry.id));
-      for (const { entry } of selected) {
+      recordSale(
+        toSaleLines(selectedRows, () => 1),
+        "sold-one",
+      );
+      bumpLedger();
+      for (const { entry } of selectedRows) {
         const nextQty = entry.quantity - 1;
         if (nextQty < 1) {
           await onDeleteEntry(entry.id);
@@ -431,13 +481,82 @@ export function CollectionView({
         }
       }
       onStatus?.(
-        `Sold −1 on ${selected.length} line${selected.length === 1 ? "" : "s"}`,
+        `Sold −1 on ${selectedRows.length} line${selectedRows.length === 1 ? "" : "s"}`,
       );
       exitSelectMode();
     } catch (err) {
       onError?.(err instanceof Error ? err.message : "Could not mark sold");
     } finally {
       setBulkBusy(false);
+    }
+  }
+
+  async function handleCopyCart() {
+    if (selectedRows.length === 0) return;
+    onError?.(null);
+    try {
+      const text = buildCartReceiptClipboard(selectedRows);
+      await copyText(text);
+      onStatus?.(`Cart copied · ${cartCards} cards · ${formatUsd(cartTotal)}`);
+    } catch (err) {
+      onError?.(err instanceof Error ? err.message : "Could not copy cart");
+    }
+  }
+
+  async function handleCheckout() {
+    if (selectedRows.length === 0 || bulkBusy) return;
+    const ok = window.confirm(
+      `Checkout ${cartCards} card${cartCards === 1 ? "" : "s"} for ${formatUsd(cartTotal)}? This sells the full selected quantities.`,
+    );
+    if (!ok) return;
+    setBulkBusy(true);
+    onError?.(null);
+    try {
+      const sale = recordSale(
+        toSaleLines(selectedRows, (e) => e.quantity),
+        "checkout",
+      );
+      bumpLedger();
+      for (const { entry } of selectedRows) {
+        await onDeleteEntry(entry.id);
+      }
+      try {
+        await copyText(buildSaleReceipt(sale));
+      } catch {
+        // Clipboard may be blocked; inventory still sold.
+      }
+      onStatus?.(
+        `Checked out · ${sale.cardCount} cards · ${formatUsd(sale.total)}`,
+      );
+      exitSelectMode();
+    } catch (err) {
+      onError?.(err instanceof Error ? err.message : "Checkout failed");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function handleRefreshPrices() {
+    if (refreshingPrices) return;
+    setRefreshingPrices(true);
+    onError?.(null);
+    onStatus?.("Refreshing prices from TCGCSV…");
+    try {
+      const next = await refreshPriceIndexFromTcgcsv((p) => {
+        onStatus?.(
+          `Refreshing prices ${Math.min(p.done + 1, p.total)}/${p.total} · ${p.label}`,
+        );
+      });
+      setIndex(installPriceIndex(next));
+      onStatus?.(
+        `Prices updated · ${next.total} rows · ${formatPriceIndexAge(next)}`,
+      );
+    } catch (err) {
+      onError?.(
+        err instanceof Error ? err.message : "Could not refresh prices",
+      );
+    } finally {
+      setRefreshingPrices(false);
     }
   }
 
@@ -577,7 +696,10 @@ export function CollectionView({
           </p>
           <p className="muted collection-view__backup-meta">
             {formatBackupAge(backupMeta)}
+            {" · "}
+            {formatPriceIndexAge(index)}
           </p>
+          <p className="muted collection-view__ledger-meta">{ledgerSummary}</p>
           {filtered && (
             <p className="muted collection-view__filter-meta">
               Showing {visibleCards} cards · {visible.length} lines
@@ -593,6 +715,14 @@ export function CollectionView({
             disabled={exporting || visible.length === 0 || selectMode}
           >
             {exporting ? "Preparing…" : filtered ? "Export view" : "Export"}
+          </button>
+          <button
+            type="button"
+            className="btn btn--ghost btn--compact"
+            onClick={() => void handleRefreshPrices()}
+            disabled={refreshingPrices}
+          >
+            {refreshingPrices ? "Prices…" : "Refresh prices"}
           </button>
           <button
             type="button"
@@ -636,9 +766,16 @@ export function CollectionView({
 
       {selectMode && (
         <div className="select-toolbar">
-          <span className="select-toolbar__count">
-            {selectedCount} selected
-          </span>
+          <div className="select-toolbar__summary">
+            <span className="select-toolbar__count">
+              {selectedCount} selected
+            </span>
+            {selectedCount > 0 && (
+              <strong className="select-toolbar__cart">
+                Cart {formatUsd(cartTotal)} · {cartCards} pcs
+              </strong>
+            )}
+          </div>
           <div className="select-toolbar__actions">
             <button
               type="button"
@@ -647,6 +784,22 @@ export function CollectionView({
               disabled={visible.length === 0}
             >
               Select all
+            </button>
+            <button
+              type="button"
+              className="btn btn--ghost btn--compact"
+              onClick={() => void handleCopyCart()}
+              disabled={selectedCount === 0}
+            >
+              Copy cart
+            </button>
+            <button
+              type="button"
+              className="btn btn--primary btn--compact"
+              onClick={() => void handleCheckout()}
+              disabled={selectedCount === 0 || bulkBusy}
+            >
+              Checkout
             </button>
             <button
               type="button"
