@@ -45,6 +45,20 @@ describe("Grand Archive collection API", () => {
     expect(res.status).toBe(400);
   });
 
+  it("searches by set prefix and collector number", async () => {
+    const searchBySetCode = vi.fn(async () => [sampleCard]);
+    const app = createApp({
+      searchCards: vi.fn(async () => []),
+      searchBySetCode,
+    });
+    const res = await request(app).get(
+      "/api/ga/search?prefix=ReC-SLM&collector_number=001",
+    );
+    expect(res.status).toBe(200);
+    expect(searchBySetCode).toHaveBeenCalledWith("ReC-SLM", "001");
+    expect(res.body.cards[0].name).toBe("Spirit of Slime");
+  });
+
   it("proxies GA card search results", async () => {
     const searchCards = vi.fn(async () => [sampleCard]);
     const app = createApp({ searchCards });

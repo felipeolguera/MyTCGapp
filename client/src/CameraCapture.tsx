@@ -108,6 +108,7 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
           </>
         )}
       </div>
+      <p className="camera__tip">Fill the frame · keep the title at the top sharp</p>
       <button
         type="button"
         className="btn btn--snap"

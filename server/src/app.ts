@@ -1,17 +1,19 @@
 import express, { type Request, type Response } from "express";
 import cors from "cors";
 import { createCollectionStore } from "./collection.js";
-import { searchGaCards } from "./gatcg.js";
+import { searchGaCards, searchGaCardsBySetCode } from "./gatcg.js";
 import type { GaCardEdition } from "./types.js";
 
 export function createApp(
   deps: {
     searchCards?: typeof searchGaCards;
+    searchBySetCode?: typeof searchGaCardsBySetCode;
     collection?: ReturnType<typeof createCollectionStore>;
   } = {},
 ) {
   const app = express();
   const searchCards = deps.searchCards ?? searchGaCards;
+  const searchBySetCode = deps.searchBySetCode ?? searchGaCardsBySetCode;
   const collection = deps.collection ?? createCollectionStore();
 
   app.use(cors());
@@ -29,17 +31,31 @@ export function createApp(
     });
   });
 
-  /** Search Grand Archive by card name (proxied). */
+  /** Search Grand Archive by card name and/or set code (proxied). */
   app.get("/api/ga/search", async (req: Request, res: Response) => {
     const name = String(req.query.name ?? "").trim();
-    if (!name) {
-      res.status(400).json({ error: "Query param `name` is required" });
+    const prefix = String(req.query.prefix ?? "").trim();
+    const collectorNumber = String(req.query.collector_number ?? "").trim();
+
+    if (!name && !(prefix && collectorNumber)) {
+      res.status(400).json({
+        error: "Provide `name`, or both `prefix` and `collector_number`",
+      });
       return;
     }
 
     try {
+      if (prefix && collectorNumber) {
+        const cards = await searchBySetCode(prefix, collectorNumber);
+        res.json({ cards, count: cards.length });
+        return;
+      }
+
       const pageSize = Number(req.query.page_size ?? 12);
-      const cards = await searchCards(name, Number.isFinite(pageSize) ? pageSize : 12);
+      const cards = await searchCards(
+        name,
+        Number.isFinite(pageSize) ? pageSize : 12,
+      );
       res.json({ cards, count: cards.length });
     } catch (err) {
       res.status(502).json({

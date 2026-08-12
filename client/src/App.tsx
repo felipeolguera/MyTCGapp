@@ -1,9 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
-import { addToCollection, fetchCollection, searchCards } from "./api";
+import {
+  addToCollection,
+  fetchCollection,
+  searchCards,
+  searchCardsBySetCode,
+} from "./api";
 import { CameraCapture } from "./CameraCapture";
 import { CardDetail } from "./CardDetail";
 import { CollectionView } from "./CollectionView";
-import { extractCardNameCandidates } from "./ocr";
+import {
+  isWeakNameQuery,
+  rankAndFilterMatches,
+  type RankedCard,
+} from "./match";
+import { scanCardImage } from "./ocr";
 import type {
   CollectionSummary,
   GaCardEdition,
@@ -23,6 +33,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [ocrHint, setOcrHint] = useState<string | null>(null);
   const [collection, setCollection] = useState<CollectionSummary | null>(null);
   const [collectionLoading, setCollectionLoading] = useState(true);
   const [sessionAdds, setSessionAdds] = useState(0);
@@ -49,9 +60,35 @@ export function App() {
     setQuantity("1");
     setBusy(false);
     setSaving(false);
+    setOcrHint(null);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
     if (!keepStatus) setStatus(null);
+  }
+
+  function applyRanked(ranked: RankedCard[], label: string) {
+    const cards = ranked.map((r) => r.card);
+    setResults(cards);
+    if (cards.length === 0) {
+      setPhase("results");
+      setStatus(`${label}: no close matches — edit the name and search`);
+      return;
+    }
+
+    const best = ranked[0];
+    // Auto-open only when we're very confident.
+    if (cards.length === 1 && best.score >= 0.72) {
+      setSelected(cards[0]);
+      setPhase("detail");
+      setQuantity("1");
+      setStatus(`Matched “${cards[0].name}”`);
+      return;
+    }
+
+    setPhase("results");
+    setStatus(
+      `${cards.length} close match${cards.length === 1 ? "" : "es"} for “${best.query}”`,
+    );
   }
 
   async function runSearch(name: string) {
@@ -60,23 +97,22 @@ export function App() {
       setError("Enter a card name to search.");
       return;
     }
+    if (isWeakNameQuery(trimmed)) {
+      setError("Try a more specific card name (at least a few letters).");
+      return;
+    }
+
     setBusy(true);
     setError(null);
     setStatus(`Looking up “${trimmed}”…`);
     try {
       const cards = await searchCards(trimmed);
-      setResults(cards);
-      setPhase("results");
-      setStatus(
-        cards.length
-          ? `${cards.length} edition${cards.length === 1 ? "" : "s"} found`
-          : "No matches — try a shorter name",
-      );
-      if (cards.length === 1) {
-        setSelected(cards[0]);
-        setPhase("detail");
-        setQuantity("1");
-      }
+      const ranked = rankAndFilterMatches(trimmed, cards, {
+        minScore: 0.35,
+        limit: 8,
+      });
+      setQuery(trimmed);
+      applyRanked(ranked, "Search");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Search failed");
     } finally {
@@ -90,40 +126,82 @@ export function App() {
     setPhase("recognizing");
     setBusy(true);
     setError(null);
-    setStatus("Reading card text…");
+    setOcrHint(null);
+    setStatus("Reading title & set code…");
 
     try {
-      const candidates = await extractCardNameCandidates(blob);
-      if (candidates.length === 0) {
-        setStatus("Couldn’t read the name — search manually.");
+      const scanned = await scanCardImage(blob);
+      const hintParts = [
+        scanned.nameCandidates[0]
+          ? `title≈${scanned.nameCandidates[0]}`
+          : null,
+        scanned.setCodes[0]
+          ? `code≈${scanned.setCodes[0].prefix} #${scanned.setCodes[0].collectorNumber}`
+          : null,
+      ].filter(Boolean);
+      setOcrHint(hintParts.join(" · ") || "OCR unclear");
+
+      // 1) Prefer exact set prefix + collector number when OCR finds it.
+      for (const code of scanned.setCodes) {
+        setStatus(
+          `Looking up ${code.prefix} #${code.collectorNumber}…`,
+        );
+        const byCode = await searchCardsBySetCode(
+          code.prefix,
+          code.collectorNumber,
+        );
+        if (byCode.length > 0) {
+          setQuery(byCode[0].name);
+          const ranked = byCode.map((card) => ({
+            card,
+            score: 1,
+            query: `${code.prefix} ${code.collectorNumber}`,
+          }));
+          applyRanked(ranked, "Set code");
+          return;
+        }
+      }
+
+      // 2) Name candidates from the title band only, ranked by similarity.
+      const strong = scanned.nameCandidates.filter((c) => !isWeakNameQuery(c));
+      if (strong.length === 0) {
+        setStatus("Couldn’t read a clear title — type the name below.");
         setPhase("ready");
         return;
       }
 
-      setQuery(candidates[0]);
-      // Try candidates in order until we get hits.
-      for (const candidate of candidates) {
+      setQuery(strong[0]);
+      let bestRanked: RankedCard[] = [];
+      let bestQuery = strong[0];
+
+      for (const candidate of strong) {
         setStatus(`Looking up “${candidate}”…`);
         const cards = await searchCards(candidate);
-        if (cards.length > 0) {
-          setResults(cards);
-          setQuery(candidate);
-          setPhase(cards.length === 1 ? "detail" : "results");
-          if (cards.length === 1) {
-            setSelected(cards[0]);
-            setQuantity("1");
-          }
-          setStatus(
-            cards.length === 1
-              ? "Match found — set quantity"
-              : `${cards.length} possible matches`,
-          );
-          return;
+        const ranked = rankAndFilterMatches(candidate, cards, {
+          minScore: 0.45,
+          limit: 8,
+        });
+        if (
+          ranked.length > 0 &&
+          (bestRanked.length === 0 || ranked[0].score > bestRanked[0].score)
+        ) {
+          bestRanked = ranked;
+          bestQuery = candidate;
         }
+        // Early exit on near-exact match.
+        if (ranked[0]?.score >= 0.9) break;
       }
-      setPhase("results");
-      setResults([]);
-      setStatus("No database match — refine the name and search.");
+
+      setQuery(bestQuery);
+      if (bestRanked.length === 0) {
+        setResults([]);
+        setPhase("results");
+        setStatus(
+          `Read “${bestQuery}” but no close database match — edit and search`,
+        );
+        return;
+      }
+      applyRanked(bestRanked, "OCR");
     } catch (err) {
       setError(
         err instanceof Error
@@ -179,6 +257,9 @@ export function App() {
         </div>
       )}
       {status && !error && <div className="banner banner--status">{status}</div>}
+      {ocrHint && phase !== "detail" && (
+        <p className="ocr-hint">OCR: {ocrHint}</p>
+      )}
 
       <main className="main">
         {tab === "scan" && (
@@ -218,7 +299,7 @@ export function App() {
                   }}
                 >
                   <label className="search__label" htmlFor="card-query">
-                    Or search by name
+                    Search / fix the card name
                   </label>
                   <div className="search__row">
                     <input
@@ -244,30 +325,46 @@ export function App() {
                 )}
 
                 {phase === "results" && (
-                  <ul className="results">
-                    {results.map((card) => (
-                      <li key={card.editionId}>
-                        <button
-                          type="button"
-                          className="result"
-                          onClick={() => {
-                            setSelected(card);
-                            setQuantity("1");
-                            setPhase("detail");
-                            setStatus(null);
-                          }}
-                        >
-                          <img src={card.imageUrl} alt="" loading="lazy" />
-                          <span>
-                            <strong>{card.name}</strong>
-                            <small>
-                              {card.setPrefix} #{card.collectorNumber}
-                            </small>
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+                  <>
+                    <ul className="results">
+                      {results.map((card) => (
+                        <li key={card.editionId}>
+                          <button
+                            type="button"
+                            className="result"
+                            onClick={() => {
+                              setSelected(card);
+                              setQuantity("1");
+                              setPhase("detail");
+                              setStatus(null);
+                            }}
+                          >
+                            <img src={card.imageUrl} alt="" loading="lazy" />
+                            <span>
+                              <strong>{card.name}</strong>
+                              <small>
+                                {card.setPrefix} #{card.collectorNumber}
+                              </small>
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    {results.length > 0 && (
+                      <button
+                        type="button"
+                        className="btn btn--ghost"
+                        onClick={() => {
+                          setResults([]);
+                          setStatus(
+                            "None matched — edit the name above and search again",
+                          );
+                        }}
+                      >
+                        None of these
+                      </button>
+                    )}
+                  </>
                 )}
               </section>
             )}
