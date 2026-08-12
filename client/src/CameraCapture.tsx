@@ -292,7 +292,7 @@ export function CameraCapture({
         <p className="camera__tip">
           {captureMode === "page"
             ? "Fill the grid · flat page · even light"
-            : "Fill the guide · avoid glare · hold steady"}
+            : "Fill the guide · keep the name sharp · hold steady"}
         </p>
       )}
     </div>
