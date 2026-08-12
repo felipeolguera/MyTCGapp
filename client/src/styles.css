@@ -646,6 +646,11 @@ input {
   gap: 0.35rem;
 }
 
+.collection-view__export-hint {
+  margin: 0 0 0.85rem;
+  font-size: 0.82rem;
+}
+
 .collection-view__filter-meta {
   margin: 0.2rem 0 0;
   font-size: 0.8rem;
