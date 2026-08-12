@@ -55,7 +55,7 @@ input {
   margin: 0 auto;
   display: grid;
   grid-template-rows: auto auto 1fr auto;
-  padding: 1rem 1rem 5.5rem;
+  padding: 1rem 1rem calc(6.75rem + env(safe-area-inset-bottom, 0px));
 }
 
 .topbar {
@@ -159,27 +159,23 @@ input {
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  width: 74px;
-  height: 74px;
+  width: 64px;
+  height: 64px;
   border-radius: 999px;
-  border: 0;
+  border: 1.5px solid rgba(255, 255, 255, 0.55);
   padding: 0;
-  background: rgba(7, 10, 14, 0.28);
-  backdrop-filter: blur(6px);
+  background: rgba(7, 10, 14, 0.42);
+  backdrop-filter: blur(8px);
   cursor: pointer;
   display: grid;
   place-items: center;
   z-index: 2;
-  transition: transform 160ms ease, opacity 160ms ease;
+  color: #fff;
+  transition: transform 160ms ease, opacity 160ms ease, background 160ms ease;
 }
 
-.camera__shutter-ring {
-  width: 58px;
-  height: 58px;
-  border-radius: 999px;
-  border: 3px solid rgba(235, 230, 220, 0.92);
-  background: radial-gradient(circle at 35% 30%, #fff7e8, var(--gold) 55%, var(--gold-deep));
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+.camera__shutter-icon {
+  display: block;
 }
 
 .camera__shutter:disabled {
@@ -189,6 +185,7 @@ input {
 
 .camera__shutter:not(:disabled):active {
   transform: translate(-50%, -50%) scale(0.96);
+  background: rgba(7, 10, 14, 0.55);
 }
 
 .camera__tip {
@@ -438,7 +435,7 @@ input {
 
 .qty-sheet {
   position: sticky;
-  bottom: 4.6rem;
+  bottom: calc(5.4rem + env(safe-area-inset-bottom, 0px));
   margin-top: 0.4rem;
   padding: 0.85rem;
   border-radius: 20px;
@@ -503,7 +500,24 @@ input {
   justify-content: space-between;
   align-items: start;
   gap: 1rem;
-  margin-bottom: 0.85rem;
+  margin-bottom: 0.55rem;
+}
+
+.collection-view__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.collection-view__export-hint {
+  margin: 0 0 0.85rem;
+  font-size: 0.82rem;
+}
+
+.btn--compact {
+  padding: 0.55rem 0.9rem;
+  font-size: 0.88rem;
 }
 
 .collection-view__header h2,
@@ -610,26 +624,28 @@ input {
 .tabbar {
   position: fixed;
   left: 50%;
-  bottom: 0.75rem;
+  bottom: calc(0.65rem + env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
   width: min(440px, calc(100% - 1.5rem));
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.35rem;
-  padding: 0.35rem;
+  padding: 0.4rem;
   border-radius: 999px;
-  background: rgba(8, 11, 16, 0.94);
-  border: 1px solid var(--line);
-  box-shadow: var(--shadow);
+  background: rgba(8, 11, 16, 0.97);
+  border: 1px solid rgba(212, 175, 108, 0.28);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+  z-index: 40;
 }
 
 .tab {
   border: 0;
   border-radius: 999px;
-  padding: 0.8rem 0.5rem;
+  padding: 0.85rem 0.5rem;
   background: transparent;
-  color: rgba(235, 230, 220, 0.62);
-  font-weight: 650;
+  color: rgba(235, 230, 220, 0.88);
+  font-weight: 700;
+  letter-spacing: 0.01em;
   cursor: pointer;
 }
 

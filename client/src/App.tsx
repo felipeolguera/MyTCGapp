@@ -347,6 +347,8 @@ export function App() {
             collection={collection}
             loading={collectionLoading}
             onRefresh={() => void refreshCollection()}
+            onStatus={setStatus}
+            onError={setError}
           />
         )}
       </main>

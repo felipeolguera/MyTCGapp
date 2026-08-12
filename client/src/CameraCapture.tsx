@@ -114,7 +114,21 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
           disabled={disabled || !ready || Boolean(error)}
           aria-label="Snap card"
         >
-          <span className="camera__shutter-ring" aria-hidden="true" />
+          <svg
+            className="camera__shutter-icon"
+            viewBox="0 0 24 24"
+            width="28"
+            height="28"
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M4.5 8.5h2.2l1.2-2h8.2l1.2 2h2.2a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18v-8a1.5 1.5 0 0 1 1.5-1.5Z" />
+            <circle cx="12" cy="14" r="3.25" />
+          </svg>
         </button>
       </div>
       <p className="camera__tip">Fill the guide · avoid glare · hold steady</p>
