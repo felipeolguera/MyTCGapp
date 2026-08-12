@@ -1,86 +1,176 @@
-import { useEffect, useMemo, useState } from "react";
-import type { Card, CardElement, Deck } from "./types";
-import {
-  addCardToDeck,
-  createDeck,
-  fetchCards,
-  fetchDeck,
-  fetchDecks,
-  removeCardFromDeck,
-} from "./api";
-
-const ELEMENTS: (CardElement | "all")[] = [
-  "all",
-  "fire",
-  "water",
-  "earth",
-  "air",
-  "arcane",
-];
-
-const ELEMENT_ICON: Record<CardElement, string> = {
-  fire: "🔥",
-  water: "💧",
-  earth: "🌿",
-  air: "🌪️",
-  arcane: "✨",
-};
+import { useCallback, useEffect, useState } from "react";
+import { addToCollection, fetchCollection, searchCards } from "./api";
+import { CameraCapture } from "./CameraCapture";
+import { CardDetail } from "./CardDetail";
+import { CollectionView } from "./CollectionView";
+import { extractCardNameCandidates } from "./ocr";
+import type {
+  CollectionSummary,
+  GaCardEdition,
+  ScanPhase,
+  TabId,
+} from "./types";
 
 export function App() {
-  const [cards, setCards] = useState<Card[]>([]);
-  const [deck, setDeck] = useState<Deck | null>(null);
-  const [filter, setFilter] = useState<CardElement | "all">("all");
+  const [tab, setTab] = useState<TabId>("scan");
+  const [phase, setPhase] = useState<ScanPhase>("ready");
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<GaCardEdition[]>([]);
+  const [selected, setSelected] = useState<GaCardEdition | null>(null);
+  const [quantity, setQuantity] = useState("1");
+  const [saving, setSaving] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState<string | null>(null);
+  const [collection, setCollection] = useState<CollectionSummary | null>(null);
+  const [collectionLoading, setCollectionLoading] = useState(true);
+  const [sessionAdds, setSessionAdds] = useState(0);
 
-  useEffect(() => {
-    async function bootstrap() {
-      try {
-        const [allCards, decks] = await Promise.all([fetchCards(), fetchDecks()]);
-        setCards(allCards);
-        const first = decks[0] ?? (await createDeck("Starter Deck"));
-        setDeck(await fetchDeck(first.id));
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load");
-      } finally {
-        setLoading(false);
-      }
+  const refreshCollection = useCallback(async () => {
+    setCollectionLoading(true);
+    try {
+      setCollection(await fetchCollection());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load collection");
+    } finally {
+      setCollectionLoading(false);
     }
-    void bootstrap();
   }, []);
 
-  const visibleCards = useMemo(
-    () => (filter === "all" ? cards : cards.filter((c) => c.element === filter)),
-    [cards, filter],
-  );
+  useEffect(() => {
+    void refreshCollection();
+  }, [refreshCollection]);
 
-  async function handleAdd(card: Card) {
-    if (!deck) return;
+  function resetScan(keepStatus = false) {
+    setPhase("ready");
+    setSelected(null);
+    setResults([]);
+    setQuantity("1");
+    setBusy(false);
+    setSaving(false);
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    if (!keepStatus) setStatus(null);
+  }
+
+  async function runSearch(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setError("Enter a card name to search.");
+      return;
+    }
+    setBusy(true);
     setError(null);
+    setStatus(`Looking up “${trimmed}”…`);
     try {
-      setDeck(await addCardToDeck(deck.id, card.id));
+      const cards = await searchCards(trimmed);
+      setResults(cards);
+      setPhase("results");
+      setStatus(
+        cards.length
+          ? `${cards.length} edition${cards.length === 1 ? "" : "s"} found`
+          : "No matches — try a shorter name",
+      );
+      if (cards.length === 1) {
+        setSelected(cards[0]);
+        setPhase("detail");
+        setQuantity("1");
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not add card");
+      setError(err instanceof Error ? err.message : "Search failed");
+    } finally {
+      setBusy(false);
     }
   }
 
-  async function handleRemove(cardId: string) {
-    if (!deck) return;
+  async function handleCapture(blob: Blob, url: string) {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(url);
+    setPhase("recognizing");
+    setBusy(true);
+    setError(null);
+    setStatus("Reading card text…");
+
+    try {
+      const candidates = await extractCardNameCandidates(blob);
+      if (candidates.length === 0) {
+        setStatus("Couldn’t read the name — search manually.");
+        setPhase("ready");
+        return;
+      }
+
+      setQuery(candidates[0]);
+      // Try candidates in order until we get hits.
+      for (const candidate of candidates) {
+        setStatus(`Looking up “${candidate}”…`);
+        const cards = await searchCards(candidate);
+        if (cards.length > 0) {
+          setResults(cards);
+          setQuery(candidate);
+          setPhase(cards.length === 1 ? "detail" : "results");
+          if (cards.length === 1) {
+            setSelected(cards[0]);
+            setQuantity("1");
+          }
+          setStatus(
+            cards.length === 1
+              ? "Match found — set quantity"
+              : `${cards.length} possible matches`,
+          );
+          return;
+        }
+      }
+      setPhase("results");
+      setResults([]);
+      setStatus("No database match — refine the name and search.");
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Recognition failed — try manual search.",
+      );
+      setPhase("ready");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSaveNext() {
+    if (!selected) return;
+    const qty = Number(quantity);
+    if (!Number.isInteger(qty) || qty < 1) {
+      setError("Enter a quantity from 1–999");
+      return;
+    }
+
+    setSaving(true);
     setError(null);
     try {
-      setDeck(await removeCardFromDeck(deck.id, cardId));
+      const { collection: next } = await addToCollection(selected, qty);
+      setCollection(next);
+      setSessionAdds((n) => n + qty);
+      setStatus(`Added ×${qty} ${selected.name}`);
+      resetScan(true);
+      setPhase("ready");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not remove card");
+      setError(err instanceof Error ? err.message : "Could not save");
+    } finally {
+      setSaving(false);
     }
   }
 
   return (
     <div className="app">
-      <header className="app__header">
-        <h1>
-          <span className="app__logo">⚔️</span> MyTCGapp
-        </h1>
-        <p className="app__subtitle">Trading Card Game — Deck Builder</p>
+      <header className="topbar">
+        <div>
+          <p className="brand">Archive Binder</p>
+          <h1>Grand Archive</h1>
+        </div>
+        <div className="topbar__stats">
+          <span>{collection?.totalCards ?? 0} owned</span>
+          <span>{sessionAdds} this session</span>
+        </div>
       </header>
 
       {error && (
@@ -88,108 +178,130 @@ export function App() {
           {error}
         </div>
       )}
+      {status && !error && <div className="banner banner--status">{status}</div>}
 
-      <main className="layout">
-        <section className="collection">
-          <div className="collection__toolbar">
-            <h2>Collection</h2>
-            <div className="filters" role="tablist" aria-label="Filter by element">
-              {ELEMENTS.map((el) => (
-                <button
-                  key={el}
-                  className={`chip ${filter === el ? "chip--active" : ""}`}
-                  onClick={() => setFilter(el)}
-                  role="tab"
-                  aria-selected={filter === el}
+      <main className="main">
+        {tab === "scan" && (
+          <>
+            {phase === "detail" && selected ? (
+              <CardDetail
+                card={selected}
+                quantity={quantity}
+                onQuantityChange={setQuantity}
+                onSaveNext={() => void handleSaveNext()}
+                onBack={() => {
+                  setSelected(null);
+                  setPhase(results.length ? "results" : "ready");
+                }}
+                saving={saving}
+              />
+            ) : (
+              <section className="scan">
+                <CameraCapture
+                  onCapture={(blob, url) => void handleCapture(blob, url)}
+                  disabled={busy}
+                />
+
+                {previewUrl && (
+                  <img
+                    src={previewUrl}
+                    alt="Last capture"
+                    className="scan__preview"
+                  />
+                )}
+
+                <form
+                  className="search"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void runSearch(query);
+                  }}
                 >
-                  {el === "all" ? "All" : `${ELEMENT_ICON[el]} ${el}`}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {loading ? (
-            <p className="muted">Loading cards…</p>
-          ) : (
-            <div className="card-grid">
-              {visibleCards.map((card) => (
-                <article
-                  key={card.id}
-                  className={`card card--${card.element} card--${card.rarity}`}
-                >
-                  <div className="card__top">
-                    <span className="card__cost" title="Mana cost">
-                      {card.cost}
-                    </span>
-                    <span className="card__name">{card.name}</span>
-                    <span className="card__element" title={card.element}>
-                      {ELEMENT_ICON[card.element]}
-                    </span>
+                  <label className="search__label" htmlFor="card-query">
+                    Or search by name
+                  </label>
+                  <div className="search__row">
+                    <input
+                      id="card-query"
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      placeholder="e.g. Spirit of Slime"
+                      autoComplete="off"
+                      enterKeyHint="search"
+                    />
+                    <button
+                      type="submit"
+                      className="btn btn--primary"
+                      disabled={busy}
+                    >
+                      Search
+                    </button>
                   </div>
-                  <p className="card__text">{card.text}</p>
-                  <div className="card__footer">
-                    <span className={`rarity rarity--${card.rarity}`}>
-                      {card.rarity}
-                    </span>
-                    <span className="stats">
-                      <span className="stat stat--atk" title="Attack">
-                        ⚔ {card.attack}
-                      </span>
-                      <span className="stat stat--hp" title="Health">
-                        ❤ {card.health}
-                      </span>
-                    </span>
-                  </div>
-                  <button
-                    className="btn btn--add"
-                    onClick={() => handleAdd(card)}
-                    aria-label={`Add ${card.name} to deck`}
-                  >
-                    + Add to deck
-                  </button>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
+                </form>
 
-        <aside className="deck">
-          <div className="deck__header">
-            <h2>{deck?.name ?? "Deck"}</h2>
-            <div className="deck__meta">
-              <span className="pill" data-testid="deck-count">
-                {deck?.totalCards ?? 0} / 30 cards
-              </span>
-              <span className="pill">avg cost {deck?.averageCost ?? 0}</span>
-            </div>
-          </div>
+                {phase === "recognizing" && (
+                  <p className="muted pulse">Recognizing card…</p>
+                )}
 
-          {deck && deck.cards.length > 0 ? (
-            <ul className="deck__list">
-              {deck.cards.map((card) => (
-                <li key={card.id} className={`deck__item deck__item--${card.element}`}>
-                  <span className="deck__cost">{card.cost}</span>
-                  <span className="deck__name">
-                    {ELEMENT_ICON[card.element]} {card.name}
-                  </span>
-                  <span className="deck__count">×{card.count}</span>
-                  <button
-                    className="btn btn--remove"
-                    onClick={() => handleRemove(card.id)}
-                    aria-label={`Remove ${card.name} from deck`}
-                  >
-                    −
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="muted deck__empty">
-              Your deck is empty. Add cards from your collection to get started.
-            </p>
-          )}
-        </aside>
+                {phase === "results" && (
+                  <ul className="results">
+                    {results.map((card) => (
+                      <li key={card.editionId}>
+                        <button
+                          type="button"
+                          className="result"
+                          onClick={() => {
+                            setSelected(card);
+                            setQuantity("1");
+                            setPhase("detail");
+                            setStatus(null);
+                          }}
+                        >
+                          <img src={card.imageUrl} alt="" loading="lazy" />
+                          <span>
+                            <strong>{card.name}</strong>
+                            <small>
+                              {card.setPrefix} #{card.collectorNumber}
+                            </small>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            )}
+          </>
+        )}
+
+        {tab === "collection" && (
+          <CollectionView
+            collection={collection}
+            loading={collectionLoading}
+            onRefresh={() => void refreshCollection()}
+          />
+        )}
       </main>
+
+      <nav className="tabbar" aria-label="Primary">
+        <button
+          type="button"
+          className={tab === "scan" ? "tab tab--active" : "tab"}
+          onClick={() => setTab("scan")}
+        >
+          Scan
+        </button>
+        <button
+          type="button"
+          className={tab === "collection" ? "tab tab--active" : "tab"}
+          onClick={() => {
+            setTab("collection");
+            void refreshCollection();
+          }}
+        >
+          Collection
+        </button>
+      </nav>
     </div>
   );
 }

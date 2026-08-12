@@ -6,5 +6,5 @@ const app = createApp();
 
 app.listen(PORT, () => {
   // eslint-disable-next-line no-console
-  console.log(`MyTCGapp API listening on http://localhost:${PORT}`);
+  console.log(`Archive Binder API listening on http://localhost:${PORT}`);
 });

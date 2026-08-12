@@ -1,4 +1,4 @@
-import type { Card, Deck } from "./types";
+import type { CollectionEntry, CollectionSummary, GaCardEdition } from "./types";
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -8,52 +8,29 @@ async function json<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export async function fetchCards(element?: string): Promise<Card[]> {
-  const query = element ? `?element=${encodeURIComponent(element)}` : "";
-  const data = await json<{ cards: Card[] }>(await fetch(`/api/cards${query}`));
+export async function searchCards(name: string): Promise<GaCardEdition[]> {
+  const data = await json<{ cards: GaCardEdition[] }>(
+    await fetch(`/api/ga/search?name=${encodeURIComponent(name)}`),
+  );
   return data.cards;
 }
 
-export async function fetchDecks(): Promise<{ id: string; name: string }[]> {
-  const data = await json<{ decks: { id: string; name: string }[] }>(
-    await fetch("/api/decks"),
+export async function fetchCollection(): Promise<CollectionSummary> {
+  const data = await json<{ collection: CollectionSummary }>(
+    await fetch("/api/collection"),
   );
-  return data.decks;
+  return data.collection;
 }
 
-export async function fetchDeck(id: string): Promise<Deck> {
-  const data = await json<{ deck: Deck }>(await fetch(`/api/decks/${id}`));
-  return data.deck;
-}
-
-export async function createDeck(name: string): Promise<Deck> {
-  const data = await json<{ deck: Deck }>(
-    await fetch("/api/decks", {
+export async function addToCollection(
+  card: GaCardEdition,
+  quantity: number,
+): Promise<{ entry: CollectionEntry; collection: CollectionSummary }> {
+  return json(
+    await fetch("/api/collection", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ card, quantity }),
     }),
   );
-  return data.deck;
-}
-
-export async function addCardToDeck(deckId: string, cardId: string): Promise<Deck> {
-  const data = await json<{ deck: Deck }>(
-    await fetch(`/api/decks/${deckId}/cards`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cardId }),
-    }),
-  );
-  return data.deck;
-}
-
-export async function removeCardFromDeck(
-  deckId: string,
-  cardId: string,
-): Promise<Deck> {
-  const data = await json<{ deck: Deck }>(
-    await fetch(`/api/decks/${deckId}/cards/${cardId}`, { method: "DELETE" }),
-  );
-  return data.deck;
 }

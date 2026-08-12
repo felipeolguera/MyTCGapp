@@ -1,56 +1,54 @@
-# MyTCGapp
+# Archive Binder (MyTCGapp)
 
-A trading card game **deck builder**. Browse a collection of elemental cards and
-assemble a 30-card deck with live cost/curve stats.
+Android-first **Grand Archive TCG** collection scanner.
 
-- **`server/`** — Express + TypeScript REST API (cards + decks, in-memory store).
-- **`client/`** — React + Vite + TypeScript single-page deck builder UI.
+1. Snap a card (or search by name)
+2. Match it against the [Grand Archive API](https://api.gatcg.com)
+3. Enter quantity on a 0–9 pad
+4. **Save & Next** adds it to your collection and returns to scan
 
-The project is an npm workspaces monorepo.
+- **`server/`** — Express + TypeScript API (GATCG search proxy + in-memory collection)
+- **`client/`** — Mobile-first React + Vite UI (camera + OCR + collection)
 
 ## Requirements
 
-- Node.js >= 20 (developed on Node 22)
+- Node.js >= 20
 - npm >= 10
+- Camera access in the browser (HTTPS or localhost) for scanning
 
 ## Getting started
 
 ```bash
-npm install        # install all workspace dependencies
-npm run dev        # start API (:3001) and web client (:5173) together
+npm install
+npm run dev
 ```
 
-Then open http://localhost:5173. The Vite dev server proxies `/api/*` requests
-to the API on port 3001.
+Open http://localhost:5173 on your phone (same network) or desktop.
+The Vite dev server proxies `/api/*` to the API on port 3001.
 
 ## Useful scripts
 
 | Command | Description |
 | --- | --- |
-| `npm run dev` | Run the API and web client together (watch mode). |
-| `npm run dev:server` | Run only the API. |
-| `npm run dev:client` | Run only the web client. |
-| `npm run build` | Type-check and build both workspaces. |
-| `npm run typecheck` | Type-check both workspaces. |
-| `npm run lint` | Lint both workspaces. |
-| `npm test` | Run the API test suite (Vitest + Supertest). |
+| `npm run dev` | API + web client together |
+| `npm run build` | Type-check and build both workspaces |
+| `npm run typecheck` | Type-check both workspaces |
+| `npm run lint` | Lint both workspaces |
+| `npm test` | API tests (Vitest + Supertest) |
 
 ## API overview
 
 | Method | Route | Description |
 | --- | --- | --- |
-| `GET` | `/api/health` | Service health + card count. |
-| `GET` | `/api/cards` | List cards (`?element=fire` to filter). |
-| `GET` | `/api/cards/:id` | Fetch a single card. |
-| `GET` | `/api/decks` | List decks. |
-| `GET` | `/api/decks/:id` | Fetch a deck with expanded cards + stats. |
-| `POST` | `/api/decks` | Create a deck (`{ "name": "..." }`). |
-| `POST` | `/api/decks/:id/cards` | Add one copy of a card (`{ "cardId": "..." }`). |
-| `DELETE` | `/api/decks/:id/cards/:cardId` | Remove one copy of a card. |
+| `GET` | `/api/health` | Service health + collection counts |
+| `GET` | `/api/ga/search?name=` | Proxy search against Grand Archive |
+| `GET` | `/api/collection` | List collection entries |
+| `POST` | `/api/collection` | Add quantity (`{ card, quantity }`) |
+| `PUT` | `/api/collection/:editionId` | Set absolute quantity (`0` removes) |
+| `DELETE` | `/api/collection/:editionId` | Remove an entry |
 
-Deck rules: max 30 cards, max 3 copies of any single card.
+## Notes
 
-## Cloud Agent environment
-
-`.cursor/environment.json` configures the Cursor Cloud Agent environment:
-`npm install` on setup, and two terminals (`api`, `web`) that run the dev servers.
+- Card recognition uses on-device OCR (Tesseract) of the photo, then name search on GATCG. Manual search is always available as a fallback.
+- Collection storage is in-memory for now (resets when the API restarts).
+- Native Android (Kotlin / Expo) can replace the web client later while keeping this API.

@@ -1,26 +1,45 @@
-export type CardRarity = "common" | "uncommon" | "rare" | "legendary";
-
-export type CardElement = "fire" | "water" | "earth" | "air" | "arcane";
-
-export interface Card {
-  id: string;
+export interface GaCardEdition {
+  editionId: string;
+  cardId: string;
   name: string;
-  element: CardElement;
-  rarity: CardRarity;
-  cost: number;
-  attack: number;
-  health: number;
-  text: string;
+  slug: string;
+  types: string[];
+  classes: string[];
+  element: string | null;
+  elements: string[];
+  costMemory: number | null;
+  costReserve: number | null;
+  level: number | null;
+  life: number | null;
+  power: number | null;
+  effect: string | null;
+  rarity: number;
+  collectorNumber: string;
+  imagePath: string;
+  imageUrl: string;
+  setName: string;
+  setPrefix: string;
+  illustrator: string | null;
 }
 
-export interface DeckCard extends Card {
-  count: number;
+export interface CollectionEntry {
+  editionId: string;
+  quantity: number;
+  card: GaCardEdition;
+  updatedAt: string;
 }
 
-export interface Deck {
-  id: string;
-  name: string;
-  cards: DeckCard[];
+export interface CollectionSummary {
+  entries: CollectionEntry[];
   totalCards: number;
-  averageCost: number;
+  uniqueCards: number;
 }
+
+export type TabId = "scan" | "collection";
+
+export type ScanPhase =
+  | "ready"
+  | "capturing"
+  | "recognizing"
+  | "results"
+  | "detail";
