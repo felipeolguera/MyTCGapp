@@ -1,6 +1,22 @@
-import type { CollectionEntry, CollectionSummary, GaCardEdition } from "./types";
+import type {
+  CardFinish,
+  CollectionEntry,
+  CollectionSummary,
+  GaCardEdition,
+} from "./types";
 import { searchGaCardsDirect } from "./gatcgClient";
-import { addLocalCollection, getLocalCollection } from "./localCollection";
+import {
+  addLocalCollection,
+  bulkRemoveLocal,
+  bulkSetForSaleLocal,
+  getLocalCollection,
+  removeLocalCollection,
+  replaceLocalCollection,
+  updateLocalCollection,
+  type AddCollectionMeta,
+  type CollectionEntryPatch,
+} from "./localCollection";
+import { searchCardIndex } from "./visualMatch";
 
 /** Native/APK builds talk to GATCG + localStorage; web/dev can use the Express API. */
 export function isStandaloneMode(): boolean {
@@ -16,8 +32,16 @@ async function json<T>(res: Response): Promise<T> {
 }
 
 export async function searchCards(name: string): Promise<GaCardEdition[]> {
+  // Local index first — works offline on the APK even when GATCG is unreachable.
+  try {
+    const local = await searchCardIndex(name, 20);
+    if (local.length > 0) return local;
+  } catch {
+    // Index missing or still loading — fall through to network.
+  }
+
   if (isStandaloneMode()) {
-    return searchGaCardsDirect(name);
+    return searchGaCardsDirect(name, 20);
   }
   const data = await json<{ cards: GaCardEdition[] }>(
     await fetch(`/api/ga/search?name=${encodeURIComponent(name)}`),
@@ -38,15 +62,111 @@ export async function fetchCollection(): Promise<CollectionSummary> {
 export async function addToCollection(
   card: GaCardEdition,
   quantity: number,
-): Promise<{ entry: CollectionEntry; collection: CollectionSummary }> {
+  finish: CardFinish = "normal",
+  meta?: AddCollectionMeta,
+): Promise<{
+  entry: CollectionEntry;
+  collection: CollectionSummary;
+  previousQuantity: number;
+}> {
   if (isStandaloneMode()) {
-    return addLocalCollection(card, quantity);
+    return addLocalCollection(card, quantity, finish, meta);
   }
-  return json(
+  const data = await json<{
+    entry: CollectionEntry;
+    collection: CollectionSummary;
+    previousQuantity?: number;
+  }>(
     await fetch("/api/collection", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ card, quantity }),
+      body: JSON.stringify({ card, quantity, finish, ...meta }),
     }),
   );
+  return {
+    ...data,
+    previousQuantity: data.previousQuantity ?? data.entry.quantity - quantity,
+  };
+}
+
+export async function updateCollectionEntry(
+  id: string,
+  patch: CollectionEntryPatch & { card: GaCardEdition },
+): Promise<{ entry: CollectionEntry; collection: CollectionSummary }> {
+  if (isStandaloneMode()) {
+    return updateLocalCollection(id, patch);
+  }
+  return json(
+    await fetch(`/api/collection/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }),
+  );
+}
+
+export async function removeFromCollection(
+  id: string,
+): Promise<{ collection: CollectionSummary }> {
+  if (isStandaloneMode()) {
+    const result = removeLocalCollection(id);
+    if (!result.removed) {
+      throw new Error("Card not in collection");
+    }
+    return { collection: result.collection };
+  }
+  return json(
+    await fetch(`/api/collection/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+  );
+}
+
+export async function restoreCollection(
+  entries: CollectionEntry[],
+): Promise<CollectionSummary> {
+  if (isStandaloneMode()) {
+    return replaceLocalCollection(entries);
+  }
+  const data = await json<{ collection: CollectionSummary }>(
+    await fetch("/api/collection", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entries }),
+    }),
+  );
+  return data.collection;
+}
+
+export async function bulkSetForSale(
+  ids: string[],
+  forSale: boolean,
+): Promise<CollectionSummary> {
+  if (isStandaloneMode()) {
+    return bulkSetForSaleLocal(ids, forSale);
+  }
+  const data = await json<{ collection: CollectionSummary }>(
+    await fetch("/api/collection/bulk-sale", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids, forSale }),
+    }),
+  );
+  return data.collection;
+}
+
+export async function bulkRemoveFromCollection(
+  ids: string[],
+): Promise<CollectionSummary> {
+  if (isStandaloneMode()) {
+    return bulkRemoveLocal(ids);
+  }
+  const data = await json<{ collection: CollectionSummary }>(
+    await fetch("/api/collection/bulk-delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    }),
+  );
+  return data.collection;
 }
