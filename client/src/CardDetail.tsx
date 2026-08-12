@@ -1,5 +1,12 @@
+import { useEffect, useState } from "react";
 import type { GaCardEdition } from "./types";
 import { QuantityPad } from "./QuantityPad";
+import {
+  formatUsd,
+  loadPriceIndex,
+  lookupCardPrice,
+  type CardPrice,
+} from "./prices";
 
 const RARITY_LABEL: Record<number, string> = {
   1: "C",
@@ -27,6 +34,32 @@ export function CardDetail({
   onBack,
   saving,
 }: CardDetailProps) {
+  const [price, setPrice] = useState<CardPrice | null>(null);
+  const [priceStatus, setPriceStatus] = useState<"loading" | "ready" | "missing">(
+    "loading",
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    setPriceStatus("loading");
+    void loadPriceIndex()
+      .then((index) => {
+        if (cancelled) return;
+        const hit = lookupCardPrice(index, card);
+        setPrice(hit);
+        setPriceStatus(hit?.market != null ? "ready" : "missing");
+      })
+      .catch(() => {
+        if (!cancelled) setPriceStatus("missing");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [card]);
+
+  const lineTotal =
+    price?.market != null ? price.market * Math.max(1, Number(quantity) || 1) : null;
+
   return (
     <section className="detail">
       <button type="button" className="btn btn--ghost" onClick={onBack}>
@@ -48,6 +81,41 @@ export function CardDetail({
           {card.setPrefix} · #{card.collectorNumber}
           {card.setName ? ` · ${card.setName}` : ""}
         </p>
+
+        <div className="price-block" data-testid="tcgplayer-price">
+          <div className="price-block__main">
+            <span className="price-block__label">TCGPlayer market</span>
+            <span className="price-block__value">
+              {priceStatus === "loading"
+                ? "…"
+                : formatUsd(price?.market ?? null)}
+            </span>
+          </div>
+          {price?.market != null && (
+            <p className="price-block__meta">
+              {price.printing}
+              {price.low != null ? ` · low ${formatUsd(price.low)}` : ""}
+              {price.mid != null ? ` · mid ${formatUsd(price.mid)}` : ""}
+              {lineTotal != null && Number(quantity) > 1
+                ? ` · line ${formatUsd(lineTotal)}`
+                : ""}
+            </p>
+          )}
+          {price?.url && (
+            <a
+              className="price-block__link"
+              href={price.url}
+              target="_blank"
+              rel="noreferrer"
+            >
+              View on TCGPlayer
+            </a>
+          )}
+          {priceStatus === "missing" && (
+            <p className="price-block__meta">No TCGPlayer price found</p>
+          )}
+        </div>
+
         <div className="detail__chips">
           {card.types.map((t) => (
             <span key={t} className="chip">

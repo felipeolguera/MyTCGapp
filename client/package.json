@@ -9,6 +9,7 @@
     "build:android": "VITE_STANDALONE=true tsc --noEmit && VITE_STANDALONE=true vite build && npx cap sync android",
     "apk:assemble": "cd android && ./gradlew assembleDebug",
     "index:cards": "node --experimental-strip-types scripts/build-card-index.mjs",
+    "index:prices": "node scripts/build-price-index.mjs",
     "preview": "vite preview --host 0.0.0.0",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",

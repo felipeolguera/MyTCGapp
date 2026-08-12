@@ -9,6 +9,7 @@ Android-first **Grand Archive TCG** collection scanner.
 - **`server/`** — Express + TypeScript API (GATCG search proxy + in-memory collection) for web/dev
 - **`client/`** — Mobile-first React + Vite UI, wrapped with Capacitor for Android
 - **`client/public/ga-card-index.json`** — perceptual hashes for ~4.5k GA printings (visual scan)
+- **`client/public/ga-price-index.json`** — TCGPlayer market prices via [TCGCSV](https://tcgcsv.com) mirror
 - **`client/android/`** — Native Android project (debug APK)
 
 ## Requirements
@@ -58,6 +59,7 @@ APK output:
 | `npm run build` | Type-check and build both workspaces |
 | `npm run build:apk` | Standalone web build + Capacitor sync + debug APK |
 | `npm run index:cards` | Rebuild the GA visual hash index |
+| `npm run index:prices` | Rebuild the TCGPlayer price index |
 | `npm run typecheck` | Type-check both workspaces |
 | `npm run lint` | Lint both workspaces |
 | `npm test` | Unit/API tests |
@@ -76,6 +78,7 @@ APK output:
 ## Notes
 
 - **Scan** uses perceptual image hashing against every Grand Archive printing (`ga-card-index.json`), not OCR.
-- Rebuild the index after big set releases: `npm run index:cards`.
+- **Prices** come from TCGPlayer market data mirrored daily by [TCGCSV](https://tcgcsv.com) (`ga-price-index.json`).
+- Rebuild indexes after big set releases: `npm run index:cards` / `npm run index:prices`.
 - Web/dev collection storage is in-memory on the API (resets when the API restarts).
 - Android APK collection storage is local to the device.
