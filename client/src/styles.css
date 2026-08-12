@@ -581,7 +581,7 @@ textarea {
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
-  padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
 }
 
 .camera {
@@ -1037,7 +1037,7 @@ textarea {
 
 .qty-sheet {
   position: sticky;
-  bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+  bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
   margin-top: 0.4rem;
   padding: 0.85rem;
   border-radius: 20px;
@@ -1822,31 +1822,26 @@ textarea {
 }
 
 .tabbar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  transform: none;
+  position: static;
   width: 100%;
   max-width: 100%;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.35rem;
+  gap: 0.45rem;
+  margin-top: 1rem;
   padding:
-    0.4rem
-    max(0.65rem, env(safe-area-inset-right, 0px))
-    calc(0.4rem + env(safe-area-inset-bottom, 0px))
-    max(0.65rem, env(safe-area-inset-left, 0px));
+    0.35rem
+    0
+    calc(0.35rem + env(safe-area-inset-bottom, 0px));
   border-radius: 0;
-  background: rgba(8, 11, 16, 0.97);
+  background: transparent;
   border: 0;
-  border-top: 1px solid rgba(212, 175, 108, 0.28);
-  box-shadow: 0 -12px 32px rgba(0, 0, 0, 0.45);
-  z-index: 40;
+  box-shadow: none;
+  z-index: auto;
 }
 
 .tab {
-  border: 0;
+  border: 1px solid rgba(212, 175, 108, 0.28);
   border-radius: 999px;
   padding: 0.9rem 0.5rem;
   min-height: 3rem;
@@ -1858,6 +1853,7 @@ textarea {
 }
 
 .tab--active {
+  border-color: transparent;
   background: linear-gradient(180deg, rgba(212, 175, 108, 0.95), rgba(180, 137, 63, 0.95));
   color: #1a1208;
 }

@@ -938,28 +938,28 @@ export function App() {
             onBulkSetForSale={handleBulkSetForSale}
           />
         )}
+
+        <nav className="tabbar" aria-label="Primary">
+          <button
+            type="button"
+            className={tab === "scan" ? "tab tab--active" : "tab"}
+            onClick={() => setTab("scan")}
+          >
+            Scan
+          </button>
+          <button
+            type="button"
+            className={tab === "collection" ? "tab tab--active" : "tab"}
+            onClick={() => {
+              setTab("collection");
+              void refreshCollection();
+            }}
+          >
+            Collection
+          </button>
+        </nav>
         </div>
       </main>
-
-      <nav className="tabbar" aria-label="Primary">
-        <button
-          type="button"
-          className={tab === "scan" ? "tab tab--active" : "tab"}
-          onClick={() => setTab("scan")}
-        >
-          Scan
-        </button>
-        <button
-          type="button"
-          className={tab === "collection" ? "tab tab--active" : "tab"}
-          onClick={() => {
-            setTab("collection");
-            void refreshCollection();
-          }}
-        >
-          Collection
-        </button>
-      </nav>
     </div>
   );
 }
