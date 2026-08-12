@@ -1,11 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
-import type { CardFinish, CollectionEntry, CollectionSummary } from "./types";
-import { finishLabel } from "./types";
+import type {
+  CardCondition,
+  CardFinish,
+  CollectionEntry,
+  CollectionSummary,
+} from "./types";
+import { CARD_CONDITIONS, finishLabel } from "./types";
 import {
   filterAndSortCollectionRows,
   type CollectionFinishFilter,
+  type CollectionSaleFilter,
   type CollectionSort,
 } from "./collectionQuery";
+import {
+  pickBackupFile,
+  parseCollectionBackup,
+  shareCollectionBackup,
+} from "./collectionBackup";
 import {
   prepareExportArtifacts,
   revokeExportArtifacts,
@@ -30,11 +41,17 @@ interface CollectionViewProps {
   onError?: (message: string | null) => void;
   onUpdateEntry: (
     id: string,
-    quantity: number,
-    finish: CardFinish,
-    card: CollectionEntry["card"],
+    patch: {
+      quantity: number;
+      finish: CardFinish;
+      card: CollectionEntry["card"];
+      forSale?: boolean;
+      condition?: CardCondition;
+      askingPrice?: number | null;
+    },
   ) => Promise<void>;
   onDeleteEntry: (id: string) => Promise<void>;
+  onRestore: (entries: CollectionEntry[]) => Promise<void>;
 }
 
 export function CollectionView({
@@ -45,6 +62,7 @@ export function CollectionView({
   onError,
   onUpdateEntry,
   onDeleteEntry,
+  onRestore,
 }: CollectionViewProps) {
   const [index, setIndex] = useState<PriceIndex | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -54,10 +72,14 @@ export function CollectionView({
   const [editing, setEditing] = useState<CollectionEntry | null>(null);
   const [editQty, setEditQty] = useState("1");
   const [editFinish, setEditFinish] = useState<CardFinish>("normal");
+  const [editForSale, setEditForSale] = useState(false);
+  const [editCondition, setEditCondition] = useState<CardCondition>("NM");
+  const [editAsking, setEditAsking] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [query, setQuery] = useState("");
   const [finishFilter, setFinishFilter] =
     useState<CollectionFinishFilter>("all");
+  const [saleFilter, setSaleFilter] = useState<CollectionSaleFilter>("all");
   const [sort, setSort] = useState<CollectionSort>("name");
 
   useEffect(() => {
@@ -76,9 +98,10 @@ export function CollectionView({
       const price = index
         ? lookupCardPrice(index, entry.card, finishToPrinting(entry.finish))
         : null;
-      const unit = price?.market ?? null;
+      const market = price?.market ?? null;
+      const unit = entry.askingPrice ?? market;
       const line = unit != null ? unit * entry.quantity : null;
-      return { entry, unit, line, url: price?.url ?? null };
+      return { entry, unit, line, url: price?.url ?? null, market };
     });
   }, [collection, index]);
 
@@ -87,9 +110,10 @@ export function CollectionView({
       filterAndSortCollectionRows(priced, {
         query,
         finish: finishFilter,
+        sale: saleFilter,
         sort,
       }),
-    [priced, query, finishFilter, sort],
+    [priced, query, finishFilter, saleFilter, sort],
   );
 
   const totalValue = priced.reduce((sum, row) => sum + (row.line ?? 0), 0);
@@ -97,12 +121,18 @@ export function CollectionView({
   const visibleCards = visible.reduce((sum, row) => sum + row.entry.quantity, 0);
   const visibleValue = visible.reduce((sum, row) => sum + (row.line ?? 0), 0);
   const filtered =
-    query.trim() !== "" || finishFilter !== "all" || sort !== "name";
+    query.trim() !== "" ||
+    finishFilter !== "all" ||
+    saleFilter !== "all" ||
+    sort !== "name";
 
   function openEditor(entry: CollectionEntry) {
     setEditing(entry);
     setEditQty(String(entry.quantity));
     setEditFinish(entry.finish);
+    setEditForSale(entry.forSale);
+    setEditCondition(entry.condition);
+    setEditAsking(entry.askingPrice != null ? String(entry.askingPrice) : "");
     onError?.(null);
   }
 
@@ -118,10 +148,23 @@ export function CollectionView({
       onError?.("Enter a quantity from 1–999");
       return;
     }
+    const asking =
+      editAsking.trim() === "" ? null : Number(editAsking);
+    if (asking != null && (!Number.isFinite(asking) || asking < 0)) {
+      onError?.("Asking price must be a valid number");
+      return;
+    }
     setSavingEdit(true);
     onError?.(null);
     try {
-      await onUpdateEntry(editing.id, qty, editFinish, editing.card);
+      await onUpdateEntry(editing.id, {
+        quantity: qty,
+        finish: editFinish,
+        card: editing.card,
+        forSale: editForSale,
+        condition: editCondition,
+        askingPrice: asking,
+      });
       onStatus?.(
         `Updated ${editing.card.name} · ${finishLabel(editFinish)} ×${qty}`,
       );
@@ -219,6 +262,41 @@ export function CollectionView({
     }
   }
 
+  async function handleBackup() {
+    if (!collection) return;
+    setExporting(true);
+    onError?.(null);
+    try {
+      const path = await shareCollectionBackup(collection);
+      onStatus?.(`Backup ready · ${path}`);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        onStatus?.(null);
+        return;
+      }
+      onError?.(err instanceof Error ? err.message : "Could not backup");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function handleRestore() {
+    onError?.(null);
+    try {
+      const text = await pickBackupFile();
+      const entries = parseCollectionBackup(text);
+      const ok = window.confirm(
+        `Restore ${entries.length} lines from backup? This replaces your current collection.`,
+      );
+      if (!ok) return;
+      await onRestore(entries);
+      onStatus?.(`Restored ${entries.length} collection lines from backup`);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      onError?.(err instanceof Error ? err.message : "Could not restore backup");
+    }
+  }
+
   if (loading && !collection) {
     return <p className="muted">Loading collection…</p>;
   }
@@ -228,9 +306,18 @@ export function CollectionView({
       <div className="empty">
         <h2>No cards yet</h2>
         <p>Scan your first Grand Archive card to start the collection.</p>
-        <button type="button" className="btn btn--ghost" onClick={onRefresh}>
-          Refresh
-        </button>
+        <div className="empty__actions">
+          <button type="button" className="btn btn--ghost" onClick={onRefresh}>
+            Refresh
+          </button>
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={() => void handleRestore()}
+          >
+            Restore backup
+          </button>
+        </div>
       </div>
     );
   }
@@ -243,7 +330,7 @@ export function CollectionView({
           <p className="muted">
             {collection.totalCards} cards · {collection.uniqueCards} unique
             {index
-              ? ` · ~${formatUsd(totalValue)} market (${pricedCount}/${collection.uniqueCards} priced)`
+              ? ` · ~${formatUsd(totalValue)} (${pricedCount}/${collection.uniqueCards} priced)`
               : ""}
           </p>
           {filtered && (
@@ -262,8 +349,20 @@ export function CollectionView({
           >
             {exporting ? "Preparing…" : filtered ? "Export view" : "Export"}
           </button>
-          <button type="button" className="btn btn--ghost btn--compact" onClick={onRefresh}>
-            Refresh
+          <button
+            type="button"
+            className="btn btn--ghost btn--compact"
+            onClick={() => void handleBackup()}
+            disabled={exporting}
+          >
+            Backup
+          </button>
+          <button
+            type="button"
+            className="btn btn--ghost btn--compact"
+            onClick={() => void handleRestore()}
+          >
+            Restore
           </button>
         </div>
       </header>
@@ -280,7 +379,7 @@ export function CollectionView({
             enterKeyHint="search"
           />
         </label>
-        <div className="collection-toolbar__row">
+        <div className="collection-toolbar__row collection-toolbar__row--3">
           <label className="collection-toolbar__field">
             <span>Finish</span>
             <select
@@ -292,6 +391,19 @@ export function CollectionView({
               <option value="all">All</option>
               <option value="normal">Normal</option>
               <option value="foil">Foil</option>
+            </select>
+          </label>
+          <label className="collection-toolbar__field">
+            <span>Sale</span>
+            <select
+              value={saleFilter}
+              onChange={(e) =>
+                setSaleFilter(e.target.value as CollectionSaleFilter)
+              }
+            >
+              <option value="all">All</option>
+              <option value="for-sale">For sale</option>
+              <option value="keep">Keep</option>
             </select>
           </label>
           <label className="collection-toolbar__field">
@@ -311,7 +423,8 @@ export function CollectionView({
       </div>
 
       <p className="collection-view__export-hint muted">
-        Tap a card to edit. Export uses the current search/filter view.
+        Tap a card to edit qty, foil, condition, asking price, or for-sale.
+        Export/Backup use the current view / full binder.
       </p>
 
       {exportArtifacts && (
@@ -335,13 +448,6 @@ export function CollectionView({
           ) : (
             <p className="muted">Checklist image could not be rendered.</p>
           )}
-          <p className="export-preview__where muted">
-            On Android, saved files go to{" "}
-            <strong>Documents/ArchiveBinder/</strong>
-            {exportArtifacts.imageName}
-            {" "}(Files app → Documents → ArchiveBinder). Or tap Share to send to
-            Discord, Drive, Photos, etc.
-          </p>
           <div className="export-preview__actions">
             <button
               type="button"
@@ -387,11 +493,7 @@ export function CollectionView({
             </button>
           </div>
 
-          <div
-            className="finish-toggle"
-            role="group"
-            aria-label="Card finish"
-          >
+          <div className="finish-toggle" role="group" aria-label="Card finish">
             {(["normal", "foil"] as CardFinish[]).map((option) => (
               <button
                 key={option}
@@ -407,6 +509,48 @@ export function CollectionView({
                 {finishLabel(option)}
               </button>
             ))}
+          </div>
+
+          <label className="entry-editor__check">
+            <input
+              type="checkbox"
+              checked={editForSale}
+              onChange={(e) => setEditForSale(e.target.checked)}
+              disabled={savingEdit}
+            />
+            For sale
+          </label>
+
+          <div className="entry-editor__meta">
+            <label className="collection-toolbar__field">
+              <span>Condition</span>
+              <select
+                value={editCondition}
+                onChange={(e) =>
+                  setEditCondition(e.target.value as CardCondition)
+                }
+                disabled={savingEdit}
+              >
+                {CARD_CONDITIONS.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="collection-toolbar__field">
+              <span>Asking $</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="0.01"
+                placeholder="Market"
+                value={editAsking}
+                onChange={(e) => setEditAsking(e.target.value)}
+                disabled={savingEdit}
+              />
+            </label>
           </div>
 
           <QuantityPad
@@ -429,7 +573,7 @@ export function CollectionView({
       )}
 
       <ul className="collection-list">
-        {visible.map(({ entry, unit, line, url }) => (
+        {visible.map(({ entry, unit, line, url, market }) => (
           <li key={entry.id} className="collection-row">
             <button
               type="button"
@@ -455,10 +599,20 @@ export function CollectionView({
                   >
                     {finishLabel(entry.finish)}
                   </span>
+                  {entry.forSale && (
+                    <span className="finish-pill finish-pill--sale">Sale</span>
+                  )}
+                  <span className="finish-pill">{entry.condition}</span>
                 </span>
                 <span className="collection-row__set">
                   {entry.card.setPrefix} #{entry.card.collectorNumber}
-                  {unit != null ? ` · ${formatUsd(unit)}` : ""}
+                  {unit != null
+                    ? ` · ${formatUsd(unit)}${
+                        entry.askingPrice != null && market != null
+                          ? ` ask (mkt ${formatUsd(market)})`
+                          : ""
+                      }`
+                    : ""}
                 </span>
               </div>
               <div className="collection-row__right">

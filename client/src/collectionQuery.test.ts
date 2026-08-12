@@ -55,6 +55,9 @@ function row(
       quantity,
       card: entryCard,
       updatedAt: "2026-01-01T00:00:00.000Z",
+      forSale: false,
+      condition: "NM",
+      askingPrice: null,
     },
     unit,
     line: unit == null ? null : unit * quantity,
@@ -83,6 +86,7 @@ describe("collectionQuery", () => {
     const result = filterAndSortCollectionRows(rows, {
       query: "",
       finish: "foil",
+      sale: "all",
       sort: "price-desc",
     });
     expect(result.map((r) => r.entry.card.name)).toEqual(["Charlie", "Bravo"]);

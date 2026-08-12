@@ -1,13 +1,28 @@
 import type {
+  CardCondition,
   CardFinish,
   CollectionEntry,
   CollectionSummary,
   GaCardEdition,
 } from "./types";
-import { collectionEntryId } from "./types";
+import {
+  collectionEntryId,
+  normalizeAskingPrice,
+  normalizeCondition,
+} from "./types";
 
-const STORAGE_KEY = "archive-binder.collection.v2";
-const LEGACY_KEY = "archive-binder.collection.v1";
+const STORAGE_KEY = "archive-binder.collection.v3";
+const LEGACY_V2_KEY = "archive-binder.collection.v2";
+const LEGACY_V1_KEY = "archive-binder.collection.v1";
+
+export interface CollectionEntryPatch {
+  quantity: number;
+  finish: CardFinish;
+  card?: GaCardEdition;
+  forSale?: boolean;
+  condition?: CardCondition;
+  askingPrice?: number | null;
+}
 
 function normalizeEntry(raw: Partial<CollectionEntry> & {
   editionId?: string;
@@ -26,6 +41,9 @@ function normalizeEntry(raw: Partial<CollectionEntry> & {
     quantity,
     card: raw.card!,
     updatedAt: raw.updatedAt ?? new Date().toISOString(),
+    forSale: Boolean(raw.forSale),
+    condition: normalizeCondition(raw.condition),
+    askingPrice: normalizeAskingPrice(raw.askingPrice),
   };
 }
 
@@ -40,8 +58,18 @@ function readEntries(): CollectionEntry[] {
         .filter((e): e is CollectionEntry => e !== null);
     }
 
-    // Migrate v1 (no finish) → normal.
-    const legacy = localStorage.getItem(LEGACY_KEY);
+    const v2 = localStorage.getItem(LEGACY_V2_KEY);
+    if (v2) {
+      const parsed = JSON.parse(v2) as unknown[];
+      const migrated = (Array.isArray(parsed) ? parsed : [])
+        .map((row) => normalizeEntry(row as CollectionEntry))
+        .filter((e): e is CollectionEntry => e !== null);
+      writeEntries(migrated);
+      localStorage.removeItem(LEGACY_V2_KEY);
+      return migrated;
+    }
+
+    const legacy = localStorage.getItem(LEGACY_V1_KEY);
     if (!legacy) return [];
     const parsed = JSON.parse(legacy) as Array<{
       editionId: string;
@@ -59,7 +87,7 @@ function readEntries(): CollectionEntry[] {
       )
       .filter((e): e is CollectionEntry => e !== null);
     writeEntries(migrated);
-    localStorage.removeItem(LEGACY_KEY);
+    localStorage.removeItem(LEGACY_V1_KEY);
     return migrated;
   } catch {
     return [];
@@ -74,7 +102,6 @@ function summarize(entries: CollectionEntry[]): CollectionSummary {
   const sorted = [...entries].sort((a, b) => {
     const name = a.card.name.localeCompare(b.card.name);
     if (name) return name;
-    // Normal before Foil
     if (a.finish === b.finish) return 0;
     return a.finish === "normal" ? -1 : 1;
   });
@@ -82,6 +109,16 @@ function summarize(entries: CollectionEntry[]): CollectionSummary {
     entries: sorted,
     uniqueCards: sorted.length,
     totalCards: sorted.reduce((sum, e) => sum + e.quantity, 0),
+  };
+}
+
+function defaultsFrom(
+  existing?: CollectionEntry,
+): Pick<CollectionEntry, "forSale" | "condition" | "askingPrice"> {
+  return {
+    forSale: existing?.forSale ?? false,
+    condition: existing?.condition ?? "NM",
+    askingPrice: existing?.askingPrice ?? null,
   };
 }
 
@@ -113,6 +150,7 @@ export function addLocalCollection(
     quantity: previousQuantity + quantity,
     card,
     updatedAt: new Date().toISOString(),
+    ...defaultsFrom(existing),
   };
 
   const next = existing
@@ -129,23 +167,37 @@ export function addLocalCollection(
  */
 export function updateLocalCollection(
   id: string,
-  quantity: number,
-  finish: CardFinish,
-  card?: GaCardEdition,
+  patch: CollectionEntryPatch,
 ): { entry: CollectionEntry; collection: CollectionSummary } {
+  const { quantity, finish } = patch;
   if (!Number.isInteger(quantity) || quantity < 0 || quantity > 999) {
     throw new Error("quantity must be an integer from 0 to 999");
   }
 
   const entries = readEntries();
   const existing = entries.find((e) => e.id === id);
-  const cardPayload = card ?? existing?.card;
+  const cardPayload = patch.card ?? existing?.card;
   if (!cardPayload) {
     throw new Error("card not found in collection");
   }
 
   const targetId = collectionEntryId(cardPayload.editionId, finish);
+  const targetExisting = entries.find((e) => e.id === targetId);
   let next = entries.filter((e) => e.id !== id && e.id !== targetId);
+
+  const sell = {
+    forSale:
+      patch.forSale ?? existing?.forSale ?? targetExisting?.forSale ?? false,
+    condition: normalizeCondition(
+      patch.condition ?? existing?.condition ?? targetExisting?.condition,
+    ),
+    askingPrice:
+      patch.askingPrice !== undefined
+        ? normalizeAskingPrice(patch.askingPrice)
+        : normalizeAskingPrice(
+            existing?.askingPrice ?? targetExisting?.askingPrice,
+          ),
+  };
 
   if (quantity === 0) {
     writeEntries(next);
@@ -157,13 +209,12 @@ export function updateLocalCollection(
         quantity: 0,
         card: cardPayload,
         updatedAt: new Date().toISOString(),
+        ...sell,
       },
       collection: summarize(next),
     };
   }
 
-  // If moving finish onto an existing line, replace with the edited quantity
-  // (absolute set — editor shows the stack being saved).
   const entry: CollectionEntry = {
     id: targetId,
     editionId: cardPayload.editionId,
@@ -171,6 +222,7 @@ export function updateLocalCollection(
     quantity,
     card: cardPayload,
     updatedAt: new Date().toISOString(),
+    ...sell,
   };
   next = [...next, entry];
   writeEntries(next);
@@ -185,4 +237,15 @@ export function removeLocalCollection(
   const removed = next.length !== entries.length;
   if (removed) writeEntries(next);
   return { collection: summarize(next), removed };
+}
+
+/** Replace the entire binder (used by restore). */
+export function replaceLocalCollection(
+  entries: CollectionEntry[],
+): CollectionSummary {
+  const normalized = entries
+    .map((row) => normalizeEntry(row))
+    .filter((e): e is CollectionEntry => e !== null);
+  writeEntries(normalized);
+  return summarize(normalized);
 }

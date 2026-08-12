@@ -148,6 +148,59 @@ describe("Grand Archive collection API", () => {
     expect(moved.body.collection.entries[0].finish).toBe("foil");
   });
 
+  it("updates sell metadata on an entry", async () => {
+    const app = createApp({ searchCards: vi.fn(async () => []) });
+    const created = await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 1 });
+    expect(created.body.entry.forSale).toBe(false);
+    expect(created.body.entry.condition).toBe("NM");
+    const id = created.body.entry.id as string;
+
+    const updated = await request(app)
+      .put(`/api/collection/${encodeURIComponent(id)}`)
+      .send({
+        quantity: 1,
+        finish: "normal",
+        card: sampleCard,
+        forSale: true,
+        condition: "LP",
+        askingPrice: 8.5,
+      });
+    expect(updated.status).toBe(200);
+    expect(updated.body.entry.forSale).toBe(true);
+    expect(updated.body.entry.condition).toBe("LP");
+    expect(updated.body.entry.askingPrice).toBe(8.5);
+  });
+
+  it("restores a full collection backup", async () => {
+    const app = createApp({ searchCards: vi.fn(async () => []) });
+    await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 1 });
+
+    const restore = await request(app)
+      .put("/api/collection")
+      .send({
+        entries: [
+          {
+            id: `${sampleCard.editionId}:foil`,
+            editionId: sampleCard.editionId,
+            finish: "foil",
+            quantity: 3,
+            card: sampleCard,
+            updatedAt: new Date().toISOString(),
+            forSale: true,
+            condition: "NM",
+            askingPrice: 4,
+          },
+        ],
+      });
+    expect(restore.status).toBe(200);
+    expect(restore.body.collection.totalCards).toBe(3);
+    expect(restore.body.collection.entries[0].finish).toBe("foil");
+  });
+
   it("deletes a collection entry", async () => {
     const app = createApp({ searchCards: vi.fn(async () => []) });
     const created = await request(app)

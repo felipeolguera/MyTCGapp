@@ -1,10 +1,24 @@
 import type {
+  CardCondition,
   CardFinish,
   CollectionEntry,
   CollectionSummary,
   GaCardEdition,
 } from "./types.js";
-import { collectionEntryId } from "./types.js";
+import {
+  collectionEntryId,
+  normalizeAskingPrice,
+  normalizeCondition,
+} from "./types.js";
+
+export interface CollectionEntryPatch {
+  quantity: number;
+  finish: CardFinish;
+  card?: GaCardEdition;
+  forSale?: boolean;
+  condition?: CardCondition;
+  askingPrice?: number | null;
+}
 
 export function createCollectionStore() {
   const entries = new Map<string, CollectionEntry>();
@@ -13,7 +27,8 @@ export function createCollectionStore() {
     const list = [...entries.values()].sort((a, b) => {
       const name = a.card.name.localeCompare(b.card.name);
       if (name) return name;
-      return a.finish.localeCompare(b.finish);
+      if (a.finish === b.finish) return 0;
+      return a.finish === "normal" ? -1 : 1;
     });
     return {
       entries: list,
@@ -26,12 +41,16 @@ export function createCollectionStore() {
     card: GaCardEdition,
     quantity: number,
     finish: CardFinish = "normal",
+    meta?: Partial<
+      Pick<CollectionEntry, "forSale" | "condition" | "askingPrice">
+    >,
   ): CollectionEntry {
     if (!Number.isInteger(quantity) || quantity < 0) {
       throw new Error("Quantity must be a non-negative integer");
     }
 
     const id = collectionEntryId(card.editionId, finish);
+    const existing = entries.get(id);
     if (quantity === 0) {
       entries.delete(id);
       return {
@@ -41,6 +60,13 @@ export function createCollectionStore() {
         quantity: 0,
         card,
         updatedAt: new Date().toISOString(),
+        forSale: meta?.forSale ?? existing?.forSale ?? false,
+        condition: normalizeCondition(meta?.condition ?? existing?.condition),
+        askingPrice: normalizeAskingPrice(
+          meta?.askingPrice !== undefined
+            ? meta.askingPrice
+            : existing?.askingPrice,
+        ),
       };
     }
 
@@ -51,6 +77,13 @@ export function createCollectionStore() {
       quantity,
       card,
       updatedAt: new Date().toISOString(),
+      forSale: meta?.forSale ?? existing?.forSale ?? false,
+      condition: normalizeCondition(meta?.condition ?? existing?.condition),
+      askingPrice: normalizeAskingPrice(
+        meta?.askingPrice !== undefined
+          ? meta.askingPrice
+          : existing?.askingPrice,
+      ),
     };
     entries.set(id, entry);
     return entry;
@@ -68,28 +101,37 @@ export function createCollectionStore() {
     const existing = entries.get(id);
     const previousQuantity = existing?.quantity ?? 0;
     const nextQty = previousQuantity + quantity;
-    return { entry: upsert(card, nextQty, finish), previousQuantity };
+    return {
+      entry: upsert(card, nextQty, finish, {
+        forSale: existing?.forSale,
+        condition: existing?.condition,
+        askingPrice: existing?.askingPrice,
+      }),
+      previousQuantity,
+    };
   }
 
-  /**
-   * Update an existing line. Changing finish moves the stack to the new
-   * finish id (replacing any quantity already on that finish).
-   */
-  function update(
-    id: string,
-    card: GaCardEdition,
-    quantity: number,
-    finish: CardFinish,
-  ): CollectionEntry {
+  function update(id: string, patch: CollectionEntryPatch): CollectionEntry {
     const existing = entries.get(id);
-    if (!existing && quantity > 0) {
-      // Allow create-via-update when card payload is present.
-      return upsert(card, quantity, finish);
+    const card = patch.card ?? existing?.card;
+    if (!card) {
+      throw new Error("card payload required when entry does not exist");
     }
-    if (existing && (existing.finish !== finish || existing.id !== collectionEntryId(card.editionId, finish))) {
+    if (
+      existing &&
+      (existing.finish !== patch.finish ||
+        existing.id !== collectionEntryId(card.editionId, patch.finish))
+    ) {
       entries.delete(id);
     }
-    return upsert(card, quantity, finish);
+    return upsert(card, patch.quantity, patch.finish, {
+      forSale: patch.forSale ?? existing?.forSale,
+      condition: patch.condition ?? existing?.condition,
+      askingPrice:
+        patch.askingPrice !== undefined
+          ? patch.askingPrice
+          : existing?.askingPrice,
+    });
   }
 
   function remove(id: string): boolean {
@@ -100,7 +142,20 @@ export function createCollectionStore() {
     return entries.get(id);
   }
 
-  return { summary, upsert, add, update, remove, get };
+  function replaceAll(next: CollectionEntry[]): CollectionSummary {
+    entries.clear();
+    for (const row of next) {
+      entries.set(row.id, {
+        ...row,
+        forSale: Boolean(row.forSale),
+        condition: normalizeCondition(row.condition),
+        askingPrice: normalizeAskingPrice(row.askingPrice),
+      });
+    }
+    return summary();
+  }
+
+  return { summary, upsert, add, update, remove, get, replaceAll };
 }
 
 export type CollectionStore = ReturnType<typeof createCollectionStore>;

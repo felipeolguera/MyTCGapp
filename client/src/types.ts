@@ -25,6 +25,17 @@ export interface GaCardEdition {
 /** Physical finish selected when adding to the collection. */
 export type CardFinish = "normal" | "foil";
 
+/** Card condition for selling. */
+export type CardCondition = "NM" | "LP" | "MP" | "HP" | "DMG";
+
+export const CARD_CONDITIONS: CardCondition[] = [
+  "NM",
+  "LP",
+  "MP",
+  "HP",
+  "DMG",
+];
+
 export interface CollectionEntry {
   /** Composite id: `${editionId}:${finish}` */
   id: string;
@@ -33,6 +44,11 @@ export interface CollectionEntry {
   quantity: number;
   card: GaCardEdition;
   updatedAt: string;
+  /** Marked for sale / export subset. */
+  forSale: boolean;
+  condition: CardCondition;
+  /** Optional asking unit price override (USD). */
+  askingPrice: number | null;
 }
 
 export interface CollectionSummary {
@@ -59,4 +75,17 @@ export function collectionEntryId(
 
 export function finishLabel(finish: CardFinish): string {
   return finish === "foil" ? "Foil" : "Normal";
+}
+
+export function normalizeCondition(raw: unknown): CardCondition {
+  return CARD_CONDITIONS.includes(raw as CardCondition)
+    ? (raw as CardCondition)
+    : "NM";
+}
+
+export function normalizeAskingPrice(raw: unknown): number | null {
+  if (raw == null || raw === "") return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100) / 100;
 }

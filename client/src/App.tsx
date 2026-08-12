@@ -3,6 +3,7 @@ import {
   addToCollection,
   fetchCollection,
   removeFromCollection,
+  restoreCollection,
   searchCards,
   updateCollectionEntry,
 } from "./api";
@@ -11,6 +12,8 @@ import { CardDetail } from "./CardDetail";
 import { CollectionView } from "./CollectionView";
 import { loadCardIndex, matchCardVisually } from "./visualMatch";
 import type {
+  CardCondition,
+  CollectionEntry,
   CollectionSummary,
   CardFinish,
   GaCardEdition,
@@ -18,6 +21,7 @@ import type {
   TabId,
 } from "./types";
 import { finishLabel } from "./types";
+import { APP_VERSION } from "./version";
 
 interface LastAdd {
   entryId: string;
@@ -238,12 +242,11 @@ export function App() {
     setUndoing(true);
     setError(null);
     try {
-      const { collection: next } = await updateCollectionEntry(
-        lastAdd.entryId,
-        lastAdd.previousQuantity,
-        lastAdd.finish,
-        lastAdd.card,
-      );
+      const { collection: next } = await updateCollectionEntry(lastAdd.entryId, {
+        quantity: lastAdd.previousQuantity,
+        finish: lastAdd.finish,
+        card: lastAdd.card,
+      });
       setCollection(next);
       setSessionAdds((n) => Math.max(0, n - lastAdd.addedQty));
       setStatus(
@@ -259,22 +262,28 @@ export function App() {
 
   async function handleUpdateEntry(
     id: string,
-    quantity: number,
-    finish: CardFinish,
-    card: GaCardEdition,
+    patch: {
+      quantity: number;
+      finish: CardFinish;
+      card: GaCardEdition;
+      forSale?: boolean;
+      condition?: CardCondition;
+      askingPrice?: number | null;
+    },
   ) {
-    const { collection: next } = await updateCollectionEntry(
-      id,
-      quantity,
-      finish,
-      card,
-    );
+    const { collection: next } = await updateCollectionEntry(id, patch);
     setCollection(next);
     setLastAdd(null);
   }
 
   async function handleDeleteEntry(id: string) {
     const { collection: next } = await removeFromCollection(id);
+    setCollection(next);
+    setLastAdd(null);
+  }
+
+  async function handleRestoreCollection(entries: CollectionEntry[]) {
+    const next = await restoreCollection(entries);
     setCollection(next);
     setLastAdd(null);
   }
@@ -287,6 +296,9 @@ export function App() {
           <h1>Grand Archive</h1>
         </div>
         <div className="topbar__stats">
+          <span className="topbar__version" title="App version">
+            v{APP_VERSION}
+          </span>
           <span>{collection?.totalCards ?? 0} owned</span>
           <span>{sessionAdds} this session</span>
         </div>
@@ -439,6 +451,7 @@ export function App() {
             onError={setError}
             onUpdateEntry={handleUpdateEntry}
             onDeleteEntry={handleDeleteEntry}
+            onRestore={handleRestoreCollection}
           />
         )}
       </main>

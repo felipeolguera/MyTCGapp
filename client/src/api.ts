@@ -1,10 +1,17 @@
-import type { CardFinish, CollectionEntry, CollectionSummary, GaCardEdition } from "./types";
+import type {
+  CardFinish,
+  CollectionEntry,
+  CollectionSummary,
+  GaCardEdition,
+} from "./types";
 import { searchGaCardsDirect } from "./gatcgClient";
 import {
   addLocalCollection,
   getLocalCollection,
   removeLocalCollection,
+  replaceLocalCollection,
   updateLocalCollection,
+  type CollectionEntryPatch,
 } from "./localCollection";
 
 /** Native/APK builds talk to GATCG + localStorage; web/dev can use the Express API. */
@@ -71,18 +78,16 @@ export async function addToCollection(
 
 export async function updateCollectionEntry(
   id: string,
-  quantity: number,
-  finish: CardFinish,
-  card: GaCardEdition,
+  patch: CollectionEntryPatch & { card: GaCardEdition },
 ): Promise<{ entry: CollectionEntry; collection: CollectionSummary }> {
   if (isStandaloneMode()) {
-    return updateLocalCollection(id, quantity, finish, card);
+    return updateLocalCollection(id, patch);
   }
   return json(
     await fetch(`/api/collection/${encodeURIComponent(id)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ card, quantity, finish }),
+      body: JSON.stringify(patch),
     }),
   );
 }
@@ -102,4 +107,20 @@ export async function removeFromCollection(
       method: "DELETE",
     }),
   );
+}
+
+export async function restoreCollection(
+  entries: CollectionEntry[],
+): Promise<CollectionSummary> {
+  if (isStandaloneMode()) {
+    return replaceLocalCollection(entries);
+  }
+  const data = await json<{ collection: CollectionSummary }>(
+    await fetch("/api/collection", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entries }),
+    }),
+  );
+  return data.collection;
 }

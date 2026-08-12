@@ -8,12 +8,14 @@ export type CollectionSort =
   | "qty-desc";
 
 export type CollectionFinishFilter = "all" | CardFinish;
+export type CollectionSaleFilter = "all" | "for-sale" | "keep";
 
 export interface CollectionListRow {
   entry: CollectionEntry;
   unit: number | null;
   line: number | null;
   url: string | null;
+  market?: number | null;
 }
 
 export function matchesCollectionQuery(
@@ -27,6 +29,7 @@ export function matchesCollectionQuery(
     entry.card.setPrefix,
     entry.card.setName,
     entry.card.collectorNumber,
+    entry.condition,
     `${entry.card.setPrefix}-${entry.card.collectorNumber}`,
     `${entry.card.setPrefix} ${entry.card.collectorNumber}`,
   ]
@@ -40,6 +43,7 @@ export function filterAndSortCollectionRows(
   options: {
     query: string;
     finish: CollectionFinishFilter;
+    sale: CollectionSaleFilter;
     sort: CollectionSort;
   },
 ): CollectionListRow[] {
@@ -47,6 +51,8 @@ export function filterAndSortCollectionRows(
     if (options.finish !== "all" && entry.finish !== options.finish) {
       return false;
     }
+    if (options.sale === "for-sale" && !entry.forSale) return false;
+    if (options.sale === "keep" && entry.forSale) return false;
     return matchesCollectionQuery(entry, options.query);
   });
 

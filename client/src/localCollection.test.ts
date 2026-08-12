@@ -63,7 +63,11 @@ describe("localCollection edit/undo helpers", () => {
 
   it("updates quantity and can change finish", () => {
     const added = addLocalCollection(card, 4, "normal");
-    const moved = updateLocalCollection(added.entry.id, 4, "foil", card);
+    const moved = updateLocalCollection(added.entry.id, {
+      quantity: 4,
+      finish: "foil",
+      card,
+    });
     expect(moved.entry.finish).toBe("foil");
     expect(moved.collection.uniqueCards).toBe(1);
     expect(moved.collection.entries[0].id).toBe("ed-1:foil");
@@ -79,12 +83,26 @@ describe("localCollection edit/undo helpers", () => {
   it("undoes an add by restoring previousQuantity", () => {
     addLocalCollection(card, 2, "normal");
     const second = addLocalCollection(card, 5, "normal");
-    updateLocalCollection(
-      second.entry.id,
-      second.previousQuantity,
-      "normal",
+    updateLocalCollection(second.entry.id, {
+      quantity: second.previousQuantity,
+      finish: "normal",
       card,
-    );
+    });
     expect(getLocalCollection().totalCards).toBe(2);
+  });
+
+  it("stores for-sale metadata", () => {
+    const added = addLocalCollection(card, 1, "normal");
+    const updated = updateLocalCollection(added.entry.id, {
+      quantity: 1,
+      finish: "normal",
+      card,
+      forSale: true,
+      condition: "LP",
+      askingPrice: 12.5,
+    });
+    expect(updated.entry.forSale).toBe(true);
+    expect(updated.entry.condition).toBe("LP");
+    expect(updated.entry.askingPrice).toBe(12.5);
   });
 });
