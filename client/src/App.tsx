@@ -1,15 +1,44 @@
 import { useCallback, useEffect, useState } from "react";
-import { addToCollection, fetchCollection, searchCards } from "./api";
-import { CameraCapture } from "./CameraCapture";
-import { CardDetail } from "./CardDetail";
+import {
+  addToCollection,
+  bulkRemoveFromCollection,
+  bulkSetForSale,
+  fetchCollection,
+  removeFromCollection,
+  restoreCollection,
+  searchCards,
+  updateCollectionEntry,
+} from "./api";
+import { CameraCapture, type CapturePayload } from "./CameraCapture";
+import { ScanConfirmSheet, type ScanIntent } from "./ScanConfirmSheet";
 import { CollectionView } from "./CollectionView";
-import { extractCardNameCandidates } from "./ocr";
+import { SearchAutocomplete } from "./SearchAutocomplete";
+import {
+  suggestionsFromCards,
+  type SearchSuggestion,
+} from "./searchSuggest";
+import { loadCardIndex, matchCardVisually, shouldAutoConfirm } from "./visualMatch";
 import type {
+  CardCondition,
+  CollectionEntry,
   CollectionSummary,
+  CardFinish,
   GaCardEdition,
   ScanPhase,
   TabId,
 } from "./types";
+import { collectionEntryId, finishLabel } from "./types";
+import { APP_VERSION } from "./version";
+import { exportCardCode } from "./exportCollection";
+import { recordSale } from "./salesLedger";
+
+interface LastAdd {
+  entryId: string;
+  card: GaCardEdition;
+  finish: CardFinish;
+  addedQty: number;
+  previousQuantity: number;
+}
 
 export function App() {
   const [tab, setTab] = useState<TabId>("scan");
@@ -17,15 +46,27 @@ export function App() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<GaCardEdition[]>([]);
+  const [matchScores, setMatchScores] = useState<Record<string, number>>({});
   const [selected, setSelected] = useState<GaCardEdition | null>(null);
   const [quantity, setQuantity] = useState("1");
+  const [finish, setFinish] = useState<CardFinish>("normal");
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [indexReady, setIndexReady] = useState(false);
   const [collection, setCollection] = useState<CollectionSummary | null>(null);
   const [collectionLoading, setCollectionLoading] = useState(true);
   const [sessionAdds, setSessionAdds] = useState(0);
+  const [lastAdd, setLastAdd] = useState<LastAdd | null>(null);
+  const [undoing, setUndoing] = useState(false);
+  const [captureWarnings, setCaptureWarnings] = useState<string[]>([]);
+  const [batchMode, setBatchMode] = useState(true);
+  const [scanIntent, setScanIntent] = useState<ScanIntent>("add");
+  const [nameSuggestions, setNameSuggestions] = useState<SearchSuggestion[]>(
+    [],
+  );
+  const [suggestCards, setSuggestCards] = useState<GaCardEdition[]>([]);
 
   const refreshCollection = useCallback(async () => {
     setCollectionLoading(true);
@@ -42,16 +83,117 @@ export function App() {
     void refreshCollection();
   }, [refreshCollection]);
 
+  useEffect(() => {
+    void loadCardIndex()
+      .then((idx) => {
+        setIndexReady(true);
+        setStatus(`Visual index ready (${idx.total} printings)`);
+      })
+      .catch(() => {
+        setIndexReady(false);
+        setStatus("Visual index unavailable — use name search");
+      });
+  }, []);
+
+  useEffect(() => {
+    if (selected || tab !== "scan") {
+      setNameSuggestions([]);
+      setSuggestCards([]);
+      return;
+    }
+    const q = query.trim();
+    if (q.length < 2) {
+      setNameSuggestions([]);
+      setSuggestCards([]);
+      return;
+    }
+    let cancelled = false;
+    const handle = window.setTimeout(() => {
+      void searchCards(q)
+        .then((cards) => {
+          if (cancelled) return;
+          setSuggestCards(cards);
+          setNameSuggestions(suggestionsFromCards(cards, 8));
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setSuggestCards([]);
+            setNameSuggestions([]);
+          }
+        });
+    }, 180);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [query, selected, tab]);
+
   function resetScan(keepStatus = false) {
     setPhase("ready");
     setSelected(null);
     setResults([]);
+    setMatchScores({});
     setQuantity("1");
+    setFinish("normal");
     setBusy(false);
     setSaving(false);
+    setCaptureWarnings([]);
+    setNameSuggestions([]);
+    setSuggestCards([]);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
     if (!keepStatus) setStatus(null);
+  }
+
+  function applyVisualMatches(
+    matches: { card: GaCardEdition; score: number; distance: number }[],
+  ) {
+    const cards = matches.map((m) => m.card);
+    const scores: Record<string, number> = {};
+    for (const m of matches) scores[m.card.editionId] = m.score;
+    setMatchScores(scores);
+    setResults(cards);
+    setQuantity("1");
+    setFinish("normal");
+
+    if (cards.length === 0) {
+      setSelected(null);
+      setPhase("results");
+      setStatus("No visual match — try a flatter photo or search by name");
+      return;
+    }
+
+    setQuery(cards[0].name);
+    const best = matches[0];
+    if (shouldAutoConfirm(matches)) {
+      setSelected(cards[0]);
+      setPhase("detail");
+      setStatus(
+        `Likely “${cards[0].name}” (${Math.round(best.score * 100)}%) — confirm or Wrong`,
+      );
+      return;
+    }
+
+    setSelected(null);
+    setPhase("results");
+    setStatus(
+      `Top ${cards.length} match${cards.length === 1 ? "" : "es"} — confirm “${cards[0].name}” (${Math.round(best.score * 100)}%)`,
+    );
+  }
+
+  function pickNameSuggestion(item: SearchSuggestion) {
+    const card = suggestCards.find((c) => c.editionId === item.id);
+    setQuery(item.primary);
+    setNameSuggestions([]);
+    if (card) {
+      setSelected(card);
+      setQuantity("1");
+      setFinish("normal");
+      setPhase("detail");
+      setStatus(`Confirm ${card.name}`);
+      return;
+    }
+    void runSearch(item.primary);
   }
 
   async function runSearch(name: string) {
@@ -62,21 +204,27 @@ export function App() {
     }
     setBusy(true);
     setError(null);
+    setCaptureWarnings([]);
     setStatus(`Looking up “${trimmed}”…`);
     try {
       const cards = await searchCards(trimmed);
-      setResults(cards);
+      const seen = new Set<string>();
+      const unique: GaCardEdition[] = [];
+      for (const c of cards) {
+        if (seen.has(c.cardId)) continue;
+        seen.add(c.cardId);
+        unique.push(c);
+        if (unique.length >= 12) break;
+      }
+      setMatchScores({});
+      setResults(unique);
+      setSelected(null);
       setPhase("results");
       setStatus(
-        cards.length
-          ? `${cards.length} edition${cards.length === 1 ? "" : "s"} found`
-          : "No matches — try a shorter name",
+        unique.length
+          ? `${unique.length} card${unique.length === 1 ? "" : "s"} found — tap to confirm`
+          : "No matches — try another name",
       );
-      if (cards.length === 1) {
-        setSelected(cards[0]);
-        setPhase("detail");
-        setQuantity("1");
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Search failed");
     } finally {
@@ -84,51 +232,31 @@ export function App() {
     }
   }
 
-  async function handleCapture(blob: Blob, url: string) {
+  async function handleCapture(payload: CapturePayload) {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setPreviewUrl(url);
+    setPreviewUrl(payload.previewUrl);
+    setCaptureWarnings(payload.quality.warnings);
+    setSelected(null);
     setPhase("recognizing");
     setBusy(true);
     setError(null);
-    setStatus("Reading card text…");
+    setStatus(
+      payload.quality.warnings.length
+        ? `${payload.quality.warnings[0]} · still matching…`
+        : "Comparing card art to Grand Archive…",
+    );
 
     try {
-      const candidates = await extractCardNameCandidates(blob);
-      if (candidates.length === 0) {
-        setStatus("Couldn’t read the name — search manually.");
-        setPhase("ready");
-        return;
-      }
-
-      setQuery(candidates[0]);
-      // Try candidates in order until we get hits.
-      for (const candidate of candidates) {
-        setStatus(`Looking up “${candidate}”…`);
-        const cards = await searchCards(candidate);
-        if (cards.length > 0) {
-          setResults(cards);
-          setQuery(candidate);
-          setPhase(cards.length === 1 ? "detail" : "results");
-          if (cards.length === 1) {
-            setSelected(cards[0]);
-            setQuantity("1");
-          }
-          setStatus(
-            cards.length === 1
-              ? "Match found — set quantity"
-              : `${cards.length} possible matches`,
-          );
-          return;
-        }
-      }
-      setPhase("results");
-      setResults([]);
-      setStatus("No database match — refine the name and search.");
+      const matches = await matchCardVisually(payload.blob, {
+        limit: 8,
+        maxDistance: 40,
+      });
+      applyVisualMatches(matches);
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Recognition failed — try manual search.",
+          : "Visual match failed — try name search.",
       );
       setPhase("ready");
     } finally {
@@ -136,7 +264,11 @@ export function App() {
     }
   }
 
-  async function handleSaveNext() {
+  async function handleSaveNext(meta: {
+    forSale: boolean;
+    condition: CardCondition;
+    askingPrice: number | null;
+  }) {
     if (!selected) return;
     const qty = Number(quantity);
     if (!Number.isInteger(qty) || qty < 1) {
@@ -147,69 +279,331 @@ export function App() {
     setSaving(true);
     setError(null);
     try {
-      const { collection: next } = await addToCollection(selected, qty);
-      setCollection(next);
-      setSessionAdds((n) => n + qty);
-      setStatus(`Added ×${qty} ${selected.name}`);
-      resetScan(true);
-      setPhase("ready");
+      if (scanIntent === "audit") {
+        const entryId = collectionEntryId(selected.editionId, finish);
+        const existing = collection?.entries.find((e) => e.id === entryId);
+        if (!existing) {
+          throw new Error("Not in binder — switch finish or Add mode");
+        }
+        const subtract = Math.min(qty, existing.quantity);
+        const nextQty = existing.quantity - subtract;
+        recordSale(
+          [
+            {
+              entryId: existing.id,
+              name: existing.card.name,
+              finish: existing.finish,
+              condition: existing.condition,
+              setCode: exportCardCode(existing),
+              quantity: subtract,
+              unitPrice: existing.askingPrice,
+              card: existing.card,
+              forSale: existing.forSale,
+              askingPrice: existing.askingPrice,
+              note: existing.note,
+            },
+          ],
+          "sold-one",
+        );
+        const { collection: next } =
+          nextQty < 1
+            ? await removeFromCollection(existing.id).then((r) => ({
+                collection: r.collection,
+              }))
+            : await updateCollectionEntry(existing.id, {
+                quantity: nextQty,
+                finish: existing.finish,
+                card: existing.card,
+                forSale: existing.forSale,
+                condition: existing.condition,
+                askingPrice: existing.askingPrice,
+                note: existing.note,
+              });
+        setCollection(next);
+        setLastAdd(null);
+        setStatus(
+          `Audit −${subtract} ${selected.name} (${finishLabel(finish)})${
+            nextQty < 1 ? " · removed" : ` · left ×${nextQty}`
+          }${batchMode ? " · ready for next snap" : ""}`,
+        );
+      } else {
+        const { entry, collection: next, previousQuantity } =
+          await addToCollection(selected, qty, finish, {
+            forSale: meta.forSale,
+            condition: meta.condition,
+            askingPrice: meta.askingPrice,
+          });
+        setCollection(next);
+        setSessionAdds((n) => n + qty);
+        setLastAdd({
+          entryId: entry.id,
+          card: selected,
+          finish,
+          addedQty: qty,
+          previousQuantity,
+        });
+        setStatus(
+          `Added ×${qty} ${selected.name} (${finishLabel(finish)})${
+            meta.forSale ? " · for sale" : ""
+          }${batchMode ? " · ready for next snap" : ""}`,
+        );
+      }
+      if (batchMode) {
+        setSelected(null);
+        setResults([]);
+        setMatchScores({});
+        setQuantity("1");
+        setFinish("normal");
+        setCaptureWarnings([]);
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        setPreviewUrl(null);
+        setPhase("ready");
+        setBusy(false);
+        setSaving(false);
+      } else {
+        resetScan(true);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save");
-    } finally {
       setSaving(false);
     }
   }
 
+  async function handleUndoLastAdd() {
+    if (!lastAdd || undoing) return;
+    setUndoing(true);
+    setError(null);
+    try {
+      const { collection: next } = await updateCollectionEntry(lastAdd.entryId, {
+        quantity: lastAdd.previousQuantity,
+        finish: lastAdd.finish,
+        card: lastAdd.card,
+      });
+      setCollection(next);
+      setSessionAdds((n) => Math.max(0, n - lastAdd.addedQty));
+      setStatus(
+        `Undid ×${lastAdd.addedQty} ${lastAdd.card.name} (${finishLabel(lastAdd.finish)})`,
+      );
+      setLastAdd(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not undo");
+    } finally {
+      setUndoing(false);
+    }
+  }
+
+  async function handleUpdateEntry(
+    id: string,
+    patch: {
+      quantity: number;
+      finish: CardFinish;
+      card: GaCardEdition;
+      forSale?: boolean;
+      condition?: CardCondition;
+      askingPrice?: number | null;
+      note?: string;
+    },
+  ) {
+    const { collection: next } = await updateCollectionEntry(id, patch);
+    setCollection(next);
+    setLastAdd(null);
+  }
+
+  async function handleDeleteEntry(id: string) {
+    const { collection: next } = await removeFromCollection(id);
+    setCollection(next);
+    setLastAdd(null);
+  }
+
+  async function handleBulkDelete(ids: string[]) {
+    const next = await bulkRemoveFromCollection(ids);
+    setCollection(next);
+    setLastAdd(null);
+  }
+
+  async function handleRestoreCollection(entries: CollectionEntry[]) {
+    const next = await restoreCollection(entries);
+    setCollection(next);
+    setLastAdd(null);
+  }
+
+  async function handleBulkSetForSale(ids: string[], forSale: boolean) {
+    const next = await bulkSetForSale(ids, forSale);
+    setCollection(next);
+    setLastAdd(null);
+  }
+
+  const confirming = Boolean(selected);
+
   return (
-    <div className="app">
-      <header className="topbar">
-        <div>
-          <p className="brand">Archive Binder</p>
-          <h1>Grand Archive</h1>
+    <div className={tab === "collection" ? "app app--collection" : "app"}>
+      <header className={tab === "collection" ? "topbar topbar--compact" : "topbar"}>
+        <div className="topbar__brand">
+          <img
+            className="topbar__logo"
+            src="/icons/brand-mark.png"
+            alt=""
+            width={40}
+            height={40}
+          />
+          {tab === "collection" ? (
+            <h1 className="topbar__title-inline">Archive Binder</h1>
+          ) : (
+            <div>
+              <p className="brand">Archive Binder</p>
+              <h1>Grand Archive</h1>
+            </div>
+          )}
         </div>
         <div className="topbar__stats">
+          <span className="topbar__version" title="App version">
+            v{APP_VERSION}
+          </span>
           <span>{collection?.totalCards ?? 0} owned</span>
-          <span>{sessionAdds} this session</span>
+          {tab === "scan" && <span>{sessionAdds} this session</span>}
         </div>
       </header>
 
       {error && (
         <div className="banner banner--error" role="alert">
-          {error}
+          <span>{error}</span>
+          <button
+            type="button"
+            className="banner__dismiss"
+            onClick={() => setError(null)}
+            aria-label="Dismiss error"
+          >
+            ×
+          </button>
         </div>
       )}
-      {status && !error && <div className="banner banner--status">{status}</div>}
+      {status && !error && (
+        <div className="banner banner--status">
+          <span>{status}</span>
+          {lastAdd ? (
+            <button
+              type="button"
+              className="banner__action"
+              onClick={() => void handleUndoLastAdd()}
+              disabled={undoing}
+            >
+              {undoing ? "Undoing…" : "Undo"}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="banner__dismiss"
+              onClick={() => setStatus(null)}
+              aria-label="Dismiss status"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      )}
 
       <main className="main">
+        <div className="main__scroll">
         {tab === "scan" && (
-          <>
-            {phase === "detail" && selected ? (
-              <CardDetail
+          <section className={confirming ? "scan scan--confirming" : "scan"}>
+            {!confirming && (
+              <div className="scan__batch-bar">
+                <label
+                  className="scan__batch-toggle"
+                  title={
+                    batchMode
+                      ? "Camera stays ready after Save & Next"
+                      : "Returns to idle after each save"
+                  }
+                >
+                  <input
+                    type="checkbox"
+                    checked={batchMode}
+                    onChange={(e) => setBatchMode(e.target.checked)}
+                  />
+                  Batch
+                </label>
+                <div className="scan__intent" role="group" aria-label="Scan mode">
+                  <button
+                    type="button"
+                    className={
+                      scanIntent === "add"
+                        ? "scan__intent-btn scan__intent-btn--active"
+                        : "scan__intent-btn"
+                    }
+                    onClick={() => setScanIntent("add")}
+                  >
+                    Add
+                  </button>
+                  <button
+                    type="button"
+                    className={
+                      scanIntent === "audit"
+                        ? "scan__intent-btn scan__intent-btn--active"
+                        : "scan__intent-btn"
+                    }
+                    onClick={() => setScanIntent("audit")}
+                    title="Subtract from binder on confirm"
+                  >
+                    Audit
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <CameraCapture
+              onCapture={(payload) => void handleCapture(payload)}
+              disabled={busy || !indexReady || confirming}
+              keepAwake={tab === "scan"}
+              collapsed={confirming}
+            />
+
+            {captureWarnings.length > 0 && (
+              <div className="banner banner--warn" role="status">
+                {captureWarnings[0]}
+                {captureWarnings.length > 1
+                  ? ` · ${captureWarnings[1]}`
+                  : ""}
+              </div>
+            )}
+
+            {previewUrl && !selected && (
+              <img
+                src={previewUrl}
+                alt="Last capture"
+                className="scan__preview"
+              />
+            )}
+
+            {selected ? (
+              <ScanConfirmSheet
                 card={selected}
                 quantity={quantity}
+                finish={finish}
+                matchScore={matchScores[selected.editionId]}
+                ownedQuantity={
+                  collection?.entries.find(
+                    (e) =>
+                      e.id === collectionEntryId(selected.editionId, finish),
+                  )?.quantity ?? 0
+                }
+                scanIntent={scanIntent}
                 onQuantityChange={setQuantity}
-                onSaveNext={() => void handleSaveNext()}
-                onBack={() => {
+                onFinishChange={setFinish}
+                onSaveNext={(meta) => void handleSaveNext(meta)}
+                onWrongCard={() => {
                   setSelected(null);
                   setPhase(results.length ? "results" : "ready");
+                  setStatus(
+                    results.length
+                      ? "Pick another match or retake"
+                      : null,
+                  );
                 }}
                 saving={saving}
               />
             ) : (
-              <section className="scan">
-                <CameraCapture
-                  onCapture={(blob, url) => void handleCapture(blob, url)}
-                  disabled={busy}
-                />
-
-                {previewUrl && (
-                  <img
-                    src={previewUrl}
-                    alt="Last capture"
-                    className="scan__preview"
-                  />
-                )}
-
+              <>
                 <form
                   className="search"
                   onSubmit={(e) => {
@@ -218,16 +612,19 @@ export function App() {
                   }}
                 >
                   <label className="search__label" htmlFor="card-query">
-                    Or search by name
+                    Or search by card name
                   </label>
                   <div className="search__row">
-                    <input
+                    <SearchAutocomplete
                       id="card-query"
                       value={query}
-                      onChange={(e) => setQuery(e.target.value)}
+                      onChange={setQuery}
+                      suggestions={nameSuggestions}
+                      onPick={pickNameSuggestion}
                       placeholder="e.g. Spirit of Slime"
-                      autoComplete="off"
-                      enterKeyHint="search"
+                      disabled={busy}
+                      minChars={2}
+                      aria-label="Search card name"
                     />
                     <button
                       type="submit"
@@ -240,38 +637,67 @@ export function App() {
                 </form>
 
                 {phase === "recognizing" && (
-                  <p className="muted pulse">Recognizing card…</p>
+                  <p className="muted pulse">Matching card art…</p>
                 )}
 
                 {phase === "results" && (
-                  <ul className="results">
-                    {results.map((card) => (
-                      <li key={card.editionId}>
-                        <button
-                          type="button"
-                          className="result"
-                          onClick={() => {
-                            setSelected(card);
-                            setQuantity("1");
-                            setPhase("detail");
-                            setStatus(null);
-                          }}
-                        >
-                          <img src={card.imageUrl} alt="" loading="lazy" />
-                          <span>
-                            <strong>{card.name}</strong>
-                            <small>
-                              {card.setPrefix} #{card.collectorNumber}
-                            </small>
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+                  <>
+                    <ul className="results">
+                      {results.map((card, idx) => (
+                        <li key={card.editionId}>
+                          <button
+                            type="button"
+                            className={
+                              idx === 0 ? "result result--best" : "result"
+                            }
+                            onClick={() => {
+                              setSelected(card);
+                              setQuantity("1");
+                              setFinish("normal");
+                              setPhase("detail");
+                              setStatus(`Confirm ${card.name}`);
+                            }}
+                          >
+                            <img src={card.imageUrl} alt="" loading="lazy" />
+                            <span>
+                              <strong>
+                                {idx === 0 ? "Best · " : ""}
+                                {card.name}
+                              </strong>
+                              <small>
+                                {card.setPrefix} #{card.collectorNumber}
+                                {card.setName ? ` · ${card.setName}` : ""}
+                                {matchScores[card.editionId] != null
+                                  ? ` · ${Math.round(matchScores[card.editionId] * 100)}%`
+                                  : ""}
+                              </small>
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    {results.length > 0 && (
+                      <button
+                        type="button"
+                        className="btn btn--ghost"
+                        onClick={() => {
+                          setResults([]);
+                          setMatchScores({});
+                          setCaptureWarnings([]);
+                          setPhase("ready");
+                          setStatus(
+                            "None matched — retake with even lighting or search by name",
+                          );
+                        }}
+                      >
+                        None of these
+                      </button>
+                    )}
+                  </>
                 )}
-              </section>
+              </>
             )}
-          </>
+          </section>
         )}
 
         {tab === "collection" && (
@@ -279,8 +705,16 @@ export function App() {
             collection={collection}
             loading={collectionLoading}
             onRefresh={() => void refreshCollection()}
+            onStatus={setStatus}
+            onError={setError}
+            onUpdateEntry={handleUpdateEntry}
+            onDeleteEntry={handleDeleteEntry}
+            onBulkDelete={handleBulkDelete}
+            onRestore={handleRestoreCollection}
+            onBulkSetForSale={handleBulkSetForSale}
           />
         )}
+        </div>
       </main>
 
       <nav className="tabbar" aria-label="Primary">
