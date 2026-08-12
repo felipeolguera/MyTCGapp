@@ -1,4 +1,11 @@
 import type { CollectionEntry, CollectionSummary, GaCardEdition } from "./types";
+import { searchGaCardsDirect } from "./gatcgClient";
+import { addLocalCollection, getLocalCollection } from "./localCollection";
+
+/** Native/APK builds talk to GATCG + localStorage; web/dev can use the Express API. */
+export function isStandaloneMode(): boolean {
+  return import.meta.env.VITE_STANDALONE === "true";
+}
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -9,6 +16,9 @@ async function json<T>(res: Response): Promise<T> {
 }
 
 export async function searchCards(name: string): Promise<GaCardEdition[]> {
+  if (isStandaloneMode()) {
+    return searchGaCardsDirect(name);
+  }
   const data = await json<{ cards: GaCardEdition[] }>(
     await fetch(`/api/ga/search?name=${encodeURIComponent(name)}`),
   );
@@ -16,6 +26,9 @@ export async function searchCards(name: string): Promise<GaCardEdition[]> {
 }
 
 export async function fetchCollection(): Promise<CollectionSummary> {
+  if (isStandaloneMode()) {
+    return getLocalCollection();
+  }
   const data = await json<{ collection: CollectionSummary }>(
     await fetch("/api/collection"),
   );
@@ -26,6 +39,9 @@ export async function addToCollection(
   card: GaCardEdition,
   quantity: number,
 ): Promise<{ entry: CollectionEntry; collection: CollectionSummary }> {
+  if (isStandaloneMode()) {
+    return addLocalCollection(card, quantity);
+  }
   return json(
     await fetch("/api/collection", {
       method: "POST",

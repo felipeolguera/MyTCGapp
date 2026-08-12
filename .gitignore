@@ -8,3 +8,11 @@ npm-debug.log*
 .env
 .env.local
 .vite/
+client/android/local.properties
+client/android/.gradle/
+client/android/app/build/
+client/android/build/
+client/android/captures/
+*.apk
+*.aab
+*.keystore
