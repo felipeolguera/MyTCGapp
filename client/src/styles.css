@@ -1069,9 +1069,50 @@ input {
 }
 
 .collection-view__backup-meta,
-.collection-view__ledger-meta {
+.collection-view__ledger-meta,
+.collection-view__movers-meta {
   margin: 0.15rem 0 0;
   font-size: 0.8rem;
+}
+
+.price-alerts {
+  margin: 0 0 0.85rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 14px;
+  border: 1px solid rgba(212, 175, 108, 0.4);
+  background: rgba(212, 175, 108, 0.1);
+  display: grid;
+  gap: 0.45rem;
+}
+
+.price-alerts__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.price-alerts__actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.price-alerts__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+
+.price-alerts__up {
+  color: #7dcea0;
+}
+
+.price-alerts__down {
+  color: #e8a0a0;
 }
 
 .collection-view__backup-reminder {

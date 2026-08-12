@@ -43,6 +43,16 @@ import {
 } from "./prices";
 import { refreshPriceIndexFromTcgcsv } from "./priceRefresh";
 import {
+  clearMovers,
+  evaluatePriceAlerts,
+  formatMoverLine,
+  formatMoversSummary,
+  readAlertSettings,
+  readMovers,
+  writeAlertSettings,
+  type PriceMover,
+} from "./priceAlerts";
+import {
   buildAskingTotalClipboard,
   buildCartReceiptClipboard,
   buildListingLineClipboard,
@@ -128,6 +138,11 @@ export function CollectionView({
     formatLedgerSummary(readSalesLedger()),
   );
   const [askPercent, setAskPercent] = useState("90");
+  const [alertThreshold, setAlertThreshold] = useState(() =>
+    String(readAlertSettings().thresholdPercent),
+  );
+  const [movers, setMovers] = useState<PriceMover[]>(() => readMovers());
+  const [showMovers, setShowMovers] = useState(false);
   const [canUndo, setCanUndo] = useState(() => {
     const last = peekLastSale();
     return Boolean(last && canUndoSale(last));
@@ -562,10 +577,41 @@ export function CollectionView({
           `Refreshing prices ${Math.min(p.done + 1, p.total)}/${p.total} · ${p.label}`,
         );
       });
-      setIndex(installPriceIndex(next));
-      onStatus?.(
-        `Prices updated · ${next.total} rows · ${formatPriceIndexAge(next)}`,
-      );
+      const installed = installPriceIndex(next);
+      setIndex(installed);
+
+      const threshold =
+        Number(alertThreshold) > 0
+          ? Number(alertThreshold)
+          : readAlertSettings().thresholdPercent;
+      writeAlertSettings({ thresholdPercent: threshold });
+
+      const rows =
+        collection?.entries.map((entry) => {
+          const hit = lookupCardPrice(
+            installed,
+            entry.card,
+            finishToPrinting(entry.finish),
+          );
+          return { entry, market: hit?.market ?? null };
+        }) ?? [];
+
+      const result = evaluatePriceAlerts(rows, threshold);
+      setMovers(result.movers);
+      if (result.firstBaseline) {
+        onStatus?.(
+          `Prices updated · baseline saved · ${formatPriceIndexAge(installed)}`,
+        );
+      } else if (result.movers.length > 0) {
+        setShowMovers(true);
+        onStatus?.(
+          `Prices updated · ${formatMoversSummary(result.movers)} (≥${threshold}%)`,
+        );
+      } else {
+        onStatus?.(
+          `Prices updated · no movers ≥${threshold}% · ${formatPriceIndexAge(installed)}`,
+        );
+      }
     } catch (err) {
       onError?.(
         err instanceof Error ? err.message : "Could not refresh prices",
@@ -573,6 +619,24 @@ export function CollectionView({
     } finally {
       setRefreshingPrices(false);
     }
+  }
+
+  function handleSaveAlertThreshold() {
+    const n = Number(alertThreshold);
+    if (!Number.isFinite(n) || n <= 0 || n > 500) {
+      onError?.("Alert threshold must be 1–500%");
+      return;
+    }
+    writeAlertSettings({ thresholdPercent: n });
+    setAlertThreshold(String(n));
+    onStatus?.(`Price alerts at ≥${n}% since last refresh`);
+  }
+
+  function handleClearMovers() {
+    clearMovers();
+    setMovers([]);
+    setShowMovers(false);
+    onStatus?.("Cleared price alerts");
   }
 
   async function handleBulkForSale(forSale: boolean) {
@@ -809,6 +873,11 @@ export function CollectionView({
             {ledgerSummary}
             {canUndo ? " · undo available" : ""}
           </p>
+          {movers.length > 0 && (
+            <p className="muted collection-view__movers-meta">
+              {formatMoversSummary(movers)} since last refresh
+            </p>
+          )}
           {filtered && (
             <p className="muted collection-view__filter-meta">
               Showing {visibleCards} cards · {visible.length} lines
@@ -871,6 +940,50 @@ export function CollectionView({
         >
           {backupReminder}
         </p>
+      )}
+
+      {movers.length > 0 && (
+        <div className="price-alerts" role="status">
+          <div className="price-alerts__head">
+            <strong>{formatMoversSummary(movers)}</strong>
+            <div className="price-alerts__actions">
+              <button
+                type="button"
+                className="btn btn--ghost btn--compact"
+                onClick={() => setShowMovers((v) => !v)}
+              >
+                {showMovers ? "Hide" : "Show"}
+              </button>
+              <button
+                type="button"
+                className="btn btn--ghost btn--compact"
+                onClick={handleClearMovers}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+          {showMovers && (
+            <ul className="price-alerts__list">
+              {movers.slice(0, 20).map((m) => (
+                <li key={m.entryId}>
+                  <span
+                    className={
+                      m.changePercent > 0
+                        ? "price-alerts__up"
+                        : "price-alerts__down"
+                    }
+                  >
+                    {formatMoverLine(m)}
+                  </span>
+                </li>
+              ))}
+              {movers.length > 20 && (
+                <li className="muted">+{movers.length - 20} more</li>
+              )}
+            </ul>
+          )}
+        </div>
       )}
 
       {selectMode && (
@@ -1015,8 +1128,20 @@ export function CollectionView({
         >
           Ask = market × %
         </button>
+        <label className="ask-toolbar__field" htmlFor="alert-threshold">
+          <span>Alert ≥%</span>
+          <input
+            id="alert-threshold"
+            value={alertThreshold}
+            onChange={(e) => setAlertThreshold(e.target.value)}
+            onBlur={handleSaveAlertThreshold}
+            inputMode="decimal"
+            disabled={selectMode}
+            aria-label="Price alert threshold percent"
+          />
+        </label>
         <span className="muted ask-toolbar__hint">
-          Applies to priced lines in the current view
+          Alerts compare owned markets to the last refresh
         </span>
       </div>
 
