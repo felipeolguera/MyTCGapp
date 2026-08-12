@@ -1,6 +1,13 @@
+import { useEffect, useState } from "react";
 import type { CardFinish, GaCardEdition } from "./types";
 import { finishLabel } from "./types";
 import { QuantityPad } from "./QuantityPad";
+import {
+  finishToPrinting,
+  formatUsd,
+  loadPriceIndex,
+  lookupCardPrice,
+} from "./prices";
 
 interface ScanConfirmSheetProps {
   card: GaCardEdition;
@@ -29,6 +36,28 @@ export function ScanConfirmSheet({
   onWrongCard,
   saving,
 }: ScanConfirmSheetProps) {
+  const [unitPrice, setUnitPrice] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setUnitPrice(null);
+    void loadPriceIndex()
+      .then((index) => {
+        if (cancelled) return;
+        const hit = lookupCardPrice(index, card, finishToPrinting(finish));
+        setUnitPrice(hit?.market ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setUnitPrice(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [card, finish]);
+
+  const qty = Math.max(1, Number(quantity) || 1);
+  const line = unitPrice != null ? unitPrice * qty : null;
+
   return (
     <section className="scan-confirm" aria-label="Confirm scanned card">
       <div className="scan-confirm__head">
@@ -39,6 +68,12 @@ export function ScanConfirmSheet({
             {card.setPrefix} #{card.collectorNumber}
             {matchScore != null ? ` · ${Math.round(matchScore * 100)}%` : ""}
           </p>
+          {unitPrice != null ? (
+            <p className="scan-confirm__price">
+              {formatUsd(unitPrice)}
+              {line != null && qty > 1 ? ` · ${formatUsd(line)} line` : ""}
+            </p>
+          ) : null}
           {ownedQuantity > 0 ? (
             <p className="scan-confirm__owned">Already own ×{ownedQuantity}</p>
           ) : null}

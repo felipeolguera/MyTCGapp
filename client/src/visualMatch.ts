@@ -152,3 +152,63 @@ export async function matchCardVisually(
     .sort((a, b) => a.distance - b.distance)
     .slice(0, limit);
 }
+
+/** High-confidence visual hit: skip straight to confirm (Wrong still shows other matches). */
+export function shouldAutoConfirm(matches: VisualMatch[]): boolean {
+  if (matches.length === 0) return false;
+  const best = matches[0];
+  if (best.score < 0.78) return false;
+  if (matches.length === 1) return true;
+  return best.score - matches[1].score >= 0.06;
+}
+
+function normalizeSearchText(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/**
+ * Offline name/set/# search against the bundled visual index.
+ * Prefer exact-ish name starts, then substring hits.
+ */
+export async function searchCardIndex(
+  query: string,
+  limit = 20,
+): Promise<GaCardEdition[]> {
+  const q = normalizeSearchText(query);
+  if (!q) return [];
+  const index = await loadCardIndex();
+
+  type Hit = { card: IndexedCard; rank: number };
+  const hits: Hit[] = [];
+  for (const card of index.cards) {
+    const name = normalizeSearchText(card.name);
+    const prefix = normalizeSearchText(card.setPrefix);
+    const num = normalizeSearchText(card.collectorNumber);
+    const setName = normalizeSearchText(card.setName);
+    let rank = -1;
+    if (name === q) rank = 0;
+    else if (name.startsWith(q)) rank = 1;
+    else if (name.includes(q)) rank = 2;
+    else if (`${prefix} ${num}`.includes(q) || `${prefix}-${num}`.includes(q))
+      rank = 3;
+    else if (prefix.includes(q) || num.includes(q) || setName.includes(q))
+      rank = 4;
+    if (rank < 0) continue;
+    hits.push({ card, rank });
+  }
+
+  hits.sort(
+    (a, b) =>
+      a.rank - b.rank ||
+      a.card.name.localeCompare(b.card.name) ||
+      a.card.setPrefix.localeCompare(b.card.setPrefix),
+  );
+
+  // One printing per cardId — prefer lower collector / first hit.
+  const byCard = new Map<string, IndexedCard>();
+  for (const hit of hits) {
+    if (!byCard.has(hit.card.cardId)) byCard.set(hit.card.cardId, hit.card);
+    if (byCard.size >= limit) break;
+  }
+  return [...byCard.values()].map(toEdition);
+}

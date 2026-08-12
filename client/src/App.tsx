@@ -12,7 +12,7 @@ import {
 import { CameraCapture, type CapturePayload } from "./CameraCapture";
 import { ScanConfirmSheet } from "./ScanConfirmSheet";
 import { CollectionView } from "./CollectionView";
-import { loadCardIndex, matchCardVisually } from "./visualMatch";
+import { loadCardIndex, matchCardVisually, shouldAutoConfirm } from "./visualMatch";
 import type {
   CardCondition,
   CollectionEntry,
@@ -106,19 +106,29 @@ export function App() {
     for (const m of matches) scores[m.card.editionId] = m.score;
     setMatchScores(scores);
     setResults(cards);
-    setSelected(null);
     setQuantity("1");
     setFinish("normal");
 
     if (cards.length === 0) {
+      setSelected(null);
       setPhase("results");
       setStatus("No visual match — try a flatter photo or search by name");
       return;
     }
 
     setQuery(cards[0].name);
-    setPhase("results");
     const best = matches[0];
+    if (shouldAutoConfirm(matches)) {
+      setSelected(cards[0]);
+      setPhase("detail");
+      setStatus(
+        `Likely “${cards[0].name}” (${Math.round(best.score * 100)}%) — confirm or Wrong`,
+      );
+      return;
+    }
+
+    setSelected(null);
+    setPhase("results");
     setStatus(
       `Top ${cards.length} match${cards.length === 1 ? "" : "es"} — confirm “${cards[0].name}” (${Math.round(best.score * 100)}%)`,
     );
@@ -366,6 +376,7 @@ export function App() {
             <CameraCapture
               onCapture={(payload) => void handleCapture(payload)}
               disabled={busy || !indexReady || Boolean(selected)}
+              keepAwake={tab === "scan"}
             />
 
             {captureWarnings.length > 0 && (

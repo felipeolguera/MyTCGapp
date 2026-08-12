@@ -36,7 +36,13 @@ function card(
 function row(
   name: string,
   finish: "normal" | "foil",
-  opts: { qty?: number; unit?: number | null; prefix?: string; num?: string } = {},
+  opts: {
+    qty?: number;
+    unit?: number | null;
+    prefix?: string;
+    num?: string;
+    note?: string;
+  } = {},
 ): CollectionListRow {
   const editionId = `${name}-${finish}`;
   const entryCard = card({
@@ -58,7 +64,7 @@ function row(
       forSale: false,
       condition: "NM",
       askingPrice: null,
-      note: "",
+      note: opts.note ?? "",
     },
     unit,
     line: unit == null ? null : unit * quantity,
@@ -67,14 +73,16 @@ function row(
 }
 
 describe("collectionQuery", () => {
-  it("matches name, set code, and collector number", () => {
+  it("matches name, set code, collector number, and notes", () => {
     const entry = row("Spirit of Slime", "foil", {
       prefix: "ReC-SLM",
       num: "042",
+      note: "Trade bait",
     }).entry;
     expect(matchesCollectionQuery(entry, "slime")).toBe(true);
     expect(matchesCollectionQuery(entry, "rec-slm")).toBe(true);
     expect(matchesCollectionQuery(entry, "042")).toBe(true);
+    expect(matchesCollectionQuery(entry, "trade")).toBe(true);
     expect(matchesCollectionQuery(entry, "dragon")).toBe(false);
   });
 
@@ -91,5 +99,20 @@ describe("collectionQuery", () => {
       sort: "price-desc",
     });
     expect(result.map((r) => r.entry.card.name)).toEqual(["Charlie", "Bravo"]);
+  });
+
+  it("filters by set prefix", () => {
+    const rows = [
+      row("Alpha", "normal", { prefix: "AMB" }),
+      row("Bravo", "foil", { prefix: "ReC-SLM" }),
+    ];
+    const result = filterAndSortCollectionRows(rows, {
+      query: "",
+      finish: "all",
+      sale: "all",
+      setPrefix: "AMB",
+      sort: "name",
+    });
+    expect(result.map((r) => r.entry.card.name)).toEqual(["Alpha"]);
   });
 });

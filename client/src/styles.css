@@ -177,6 +177,13 @@ input {
   font-weight: 650;
 }
 
+.scan-confirm__price {
+  margin: 0.3rem 0 0;
+  color: var(--gold);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
 .scan-confirm .qty-sheet {
   position: static;
   margin-top: 0;
@@ -291,6 +298,27 @@ input {
   text-align: center;
   font-size: 0.82rem;
   color: var(--text-soft);
+}
+
+.camera__torch {
+  position: absolute;
+  top: 0.65rem;
+  right: 0.65rem;
+  z-index: 2;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(8, 10, 14, 0.72);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.camera__torch--on {
+  border-color: rgba(212, 175, 108, 0.65);
+  color: var(--gold);
+  background: rgba(212, 175, 108, 0.16);
 }
 
 .btn {
@@ -696,6 +724,10 @@ input {
 
 .collection-toolbar__row--3 {
   grid-template-columns: 1fr 1fr 1fr;
+}
+
+.collection-toolbar__row--2 {
+  grid-template-columns: 1fr 1fr;
 }
 
 .collection-toolbar__field {

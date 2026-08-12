@@ -30,6 +30,7 @@ export function matchesCollectionQuery(
     entry.card.setName,
     entry.card.collectorNumber,
     entry.condition,
+    entry.note ?? "",
     `${entry.card.setPrefix}-${entry.card.collectorNumber}`,
     `${entry.card.setPrefix} ${entry.card.collectorNumber}`,
   ]
@@ -38,21 +39,38 @@ export function matchesCollectionQuery(
   return haystack.includes(q);
 }
 
+/** Unique set prefixes present in the binder, A→Z. */
+export function listCollectionSetPrefixes(
+  entries: CollectionEntry[],
+): string[] {
+  const prefixes = new Set<string>();
+  for (const entry of entries) {
+    const prefix = entry.card.setPrefix?.trim();
+    if (prefix) prefixes.add(prefix);
+  }
+  return [...prefixes].sort((a, b) => a.localeCompare(b));
+}
+
 export function filterAndSortCollectionRows(
   rows: CollectionListRow[],
   options: {
     query: string;
     finish: CollectionFinishFilter;
     sale: CollectionSaleFilter;
+    setPrefix?: string | "all";
     sort: CollectionSort;
   },
 ): CollectionListRow[] {
+  const setPrefix = options.setPrefix ?? "all";
   const filtered = rows.filter(({ entry }) => {
     if (options.finish !== "all" && entry.finish !== options.finish) {
       return false;
     }
     if (options.sale === "for-sale" && !entry.forSale) return false;
     if (options.sale === "keep" && entry.forSale) return false;
+    if (setPrefix !== "all" && entry.card.setPrefix !== setPrefix) {
+      return false;
+    }
     return matchesCollectionQuery(entry, options.query);
   });
 

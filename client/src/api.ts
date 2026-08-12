@@ -15,6 +15,7 @@ import {
   updateLocalCollection,
   type CollectionEntryPatch,
 } from "./localCollection";
+import { searchCardIndex } from "./visualMatch";
 
 /** Native/APK builds talk to GATCG + localStorage; web/dev can use the Express API. */
 export function isStandaloneMode(): boolean {
@@ -30,6 +31,14 @@ async function json<T>(res: Response): Promise<T> {
 }
 
 export async function searchCards(name: string): Promise<GaCardEdition[]> {
+  // Local index first — works offline on the APK even when GATCG is unreachable.
+  try {
+    const local = await searchCardIndex(name, 20);
+    if (local.length > 0) return local;
+  } catch {
+    // Index missing or still loading — fall through to network.
+  }
+
   if (isStandaloneMode()) {
     return searchGaCardsDirect(name, 20);
   }

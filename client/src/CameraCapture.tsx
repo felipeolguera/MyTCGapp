@@ -10,13 +10,26 @@ export interface CapturePayload {
 interface CameraCaptureProps {
   onCapture: (payload: CapturePayload) => void;
   disabled?: boolean;
+  /** Keep the screen awake while the camera is active (Scan tab). */
+  keepAwake?: boolean;
 }
 
-export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
+type TorchCapableTrack = MediaStreamTrack & {
+  getCapabilities?: () => MediaTrackCapabilities & { torch?: boolean };
+};
+
+export function CameraCapture({
+  onCapture,
+  disabled,
+  keepAwake = false,
+}: CameraCaptureProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const [torchSupported, setTorchSupported] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
   const streamRef = useRef<MediaStream | null>(null);
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -36,6 +49,11 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
           return;
         }
         streamRef.current = stream;
+        const track = stream.getVideoTracks()[0] as TorchCapableTrack | undefined;
+        const caps = track?.getCapabilities?.() as
+          | (MediaTrackCapabilities & { torch?: boolean })
+          | undefined;
+        setTorchSupported(Boolean(caps && "torch" in caps && caps.torch));
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           await videoRef.current.play();
@@ -52,8 +70,62 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
     return () => {
       cancelled = true;
       streamRef.current?.getTracks().forEach((t) => t.stop());
+      setTorchOn(false);
+      setTorchSupported(false);
     };
   }, []);
+
+  useEffect(() => {
+    if (!keepAwake || typeof navigator === "undefined" || !navigator.wakeLock) {
+      return;
+    }
+    let cancelled = false;
+
+    async function requestLock() {
+      try {
+        const sentinel = await navigator.wakeLock.request("screen");
+        if (cancelled) {
+          void sentinel.release();
+          return;
+        }
+        wakeLockRef.current = sentinel;
+        sentinel.addEventListener("release", () => {
+          if (wakeLockRef.current === sentinel) wakeLockRef.current = null;
+        });
+      } catch {
+        // Browser/OS may deny wake lock — non-fatal.
+      }
+    }
+
+    void requestLock();
+    const onVis = () => {
+      if (document.visibilityState === "visible") void requestLock();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVis);
+      void wakeLockRef.current?.release();
+      wakeLockRef.current = null;
+    };
+  }, [keepAwake]);
+
+  async function toggleTorch() {
+    const track = streamRef.current?.getVideoTracks()[0] as
+      | TorchCapableTrack
+      | undefined;
+    if (!track || !torchSupported) return;
+    const next = !torchOn;
+    try {
+      await track.applyConstraints({
+        advanced: [{ torch: next } as MediaTrackConstraintSet],
+      });
+      setTorchOn(next);
+    } catch {
+      setTorchSupported(false);
+      setTorchOn(false);
+    }
+  }
 
   async function handleSnap() {
     const video = videoRef.current;
@@ -122,6 +194,21 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
               aria-label="Card camera preview"
             />
             <div className="camera__guide" aria-hidden="true" />
+            {torchSupported && (
+              <button
+                type="button"
+                className={
+                  torchOn
+                    ? "camera__torch camera__torch--on"
+                    : "camera__torch"
+                }
+                onClick={() => void toggleTorch()}
+                aria-pressed={torchOn}
+                aria-label={torchOn ? "Turn torch off" : "Turn torch on"}
+              >
+                Torch
+              </button>
+            )}
           </>
         )}
 

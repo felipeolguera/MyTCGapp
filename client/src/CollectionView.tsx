@@ -8,6 +8,7 @@ import type {
 import { CARD_CONDITIONS, finishLabel } from "./types";
 import {
   filterAndSortCollectionRows,
+  listCollectionSetPrefixes,
   type CollectionFinishFilter,
   type CollectionSaleFilter,
   type CollectionSort,
@@ -97,6 +98,7 @@ export function CollectionView({
   const [finishFilter, setFinishFilter] =
     useState<CollectionFinishFilter>("all");
   const [saleFilter, setSaleFilter] = useState<CollectionSaleFilter>("all");
+  const [setFilter, setSetFilter] = useState<string>("all");
   const [sort, setSort] = useState<CollectionSort>("name");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
@@ -134,9 +136,15 @@ export function CollectionView({
         query,
         finish: finishFilter,
         sale: saleFilter,
+        setPrefix: setFilter,
         sort,
       }),
-    [priced, query, finishFilter, saleFilter, sort],
+    [priced, query, finishFilter, saleFilter, setFilter, sort],
+  );
+
+  const setPrefixes = useMemo(
+    () => (collection ? listCollectionSetPrefixes(collection.entries) : []),
+    [collection],
   );
 
   const totalValue = priced.reduce((sum, row) => sum + (row.line ?? 0), 0);
@@ -148,6 +156,7 @@ export function CollectionView({
     query.trim() !== "" ||
     finishFilter !== "all" ||
     saleFilter !== "all" ||
+    setFilter !== "all" ||
     sort !== "name";
   const backupReminder = backupReminderMessage(backupMeta);
   const selectedCount = selectedIds.size;
@@ -258,6 +267,28 @@ export function CollectionView({
     } catch (err) {
       onError?.(
         err instanceof Error ? err.message : "Could not delete selected cards",
+      );
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function handleBulkSaleSelected(forSale: boolean) {
+    if (selectedCount === 0 || bulkBusy) return;
+    setBulkBusy(true);
+    onError?.(null);
+    try {
+      await onBulkSetForSale([...selectedIds], forSale);
+      onStatus?.(
+        forSale
+          ? `Marked ${selectedCount} selected for sale`
+          : `Cleared for-sale on ${selectedCount} selected`,
+      );
+      if (forSale) setSaleFilter("for-sale");
+      exitSelectMode();
+    } catch (err) {
+      onError?.(
+        err instanceof Error ? err.message : "Could not update for-sale flags",
       );
     } finally {
       setBulkBusy(false);
@@ -537,6 +568,22 @@ export function CollectionView({
             </button>
             <button
               type="button"
+              className="btn btn--ghost btn--compact"
+              onClick={() => void handleBulkSaleSelected(true)}
+              disabled={selectedCount === 0 || bulkBusy}
+            >
+              Mark sale
+            </button>
+            <button
+              type="button"
+              className="btn btn--ghost btn--compact"
+              onClick={() => void handleBulkSaleSelected(false)}
+              disabled={selectedCount === 0 || bulkBusy}
+            >
+              Clear sale
+            </button>
+            <button
+              type="button"
               className="btn btn--danger btn--compact"
               onClick={() => void handleBulkDeleteSelected()}
               disabled={selectedCount === 0 || bulkBusy}
@@ -595,12 +642,12 @@ export function CollectionView({
             id="collection-query"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search name, set, or #"
+            placeholder="Search name, set, #, or note"
             autoComplete="off"
             enterKeyHint="search"
           />
         </label>
-        <div className="collection-toolbar__row collection-toolbar__row--3">
+        <div className="collection-toolbar__row collection-toolbar__row--2">
           <label className="collection-toolbar__field">
             <span>Finish</span>
             <select
@@ -625,6 +672,22 @@ export function CollectionView({
               <option value="all">All</option>
               <option value="for-sale">For sale</option>
               <option value="keep">Keep</option>
+            </select>
+          </label>
+        </div>
+        <div className="collection-toolbar__row collection-toolbar__row--2">
+          <label className="collection-toolbar__field">
+            <span>Set</span>
+            <select
+              value={setFilter}
+              onChange={(e) => setSetFilter(e.target.value)}
+            >
+              <option value="all">All sets</option>
+              {setPrefixes.map((prefix) => (
+                <option key={prefix} value={prefix}>
+                  {prefix}
+                </option>
+              ))}
             </select>
           </label>
           <label className="collection-toolbar__field">
