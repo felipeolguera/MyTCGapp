@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from "react";
+import { assessCaptureQuality, type CaptureQuality } from "./captureQuality";
+
+export interface CapturePayload {
+  blob: Blob;
+  previewUrl: string;
+  quality: CaptureQuality;
+}
 
 interface CameraCaptureProps {
-  onCapture: (blob: Blob, previewUrl: string) => void;
+  onCapture: (payload: CapturePayload) => void;
   disabled?: boolean;
 }
 
@@ -55,7 +62,7 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
     const canvas = document.createElement("canvas");
     canvas.width = video.videoWidth || 1280;
     canvas.height = video.videoHeight || 720;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
@@ -66,7 +73,7 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
     const cropped = document.createElement("canvas");
     cropped.width = cropW;
     cropped.height = Math.min(cropH, canvas.height - sy);
-    const cctx = cropped.getContext("2d");
+    const cctx = cropped.getContext("2d", { willReadFrequently: true });
     if (!cctx) return;
     cctx.drawImage(
       canvas,
@@ -80,11 +87,22 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
       cropped.height,
     );
 
+    const image = cctx.getImageData(0, 0, cropped.width, cropped.height);
+    const quality = assessCaptureQuality(
+      image.data,
+      cropped.width,
+      cropped.height,
+    );
+
     const blob = await new Promise<Blob | null>((resolve) =>
       cropped.toBlob((b) => resolve(b), "image/jpeg", 0.92),
     );
     if (!blob) return;
-    onCapture(blob, URL.createObjectURL(blob));
+    onCapture({
+      blob,
+      previewUrl: URL.createObjectURL(blob),
+      quality,
+    });
   }
 
   return (

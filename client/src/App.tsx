@@ -7,8 +7,8 @@ import {
   searchCards,
   updateCollectionEntry,
 } from "./api";
-import { CameraCapture } from "./CameraCapture";
-import { CardDetail } from "./CardDetail";
+import { CameraCapture, type CapturePayload } from "./CameraCapture";
+import { ScanConfirmSheet } from "./ScanConfirmSheet";
 import { CollectionView } from "./CollectionView";
 import { loadCardIndex, matchCardVisually } from "./visualMatch";
 import type {
@@ -51,6 +51,8 @@ export function App() {
   const [sessionAdds, setSessionAdds] = useState(0);
   const [lastAdd, setLastAdd] = useState<LastAdd | null>(null);
   const [undoing, setUndoing] = useState(false);
+  const [captureWarnings, setCaptureWarnings] = useState<string[]>([]);
+  const [batchMode, setBatchMode] = useState(true);
 
   const refreshCollection = useCallback(async () => {
     setCollectionLoading(true);
@@ -88,6 +90,7 @@ export function App() {
     setFinish("normal");
     setBusy(false);
     setSaving(false);
+    setCaptureWarnings([]);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
     if (!keepStatus) setStatus(null);
@@ -101,6 +104,9 @@ export function App() {
     for (const m of matches) scores[m.card.editionId] = m.score;
     setMatchScores(scores);
     setResults(cards);
+    setSelected(null);
+    setQuantity("1");
+    setFinish("normal");
 
     if (cards.length === 0) {
       setPhase("results");
@@ -109,27 +115,10 @@ export function App() {
     }
 
     setQuery(cards[0].name);
-    const best = matches[0];
-    if (best.distance <= 12 && cards.length === 1) {
-      setSelected(cards[0]);
-      setPhase("detail");
-      setQuantity("1");
-      setFinish("normal");
-      setStatus(`Matched “${cards[0].name}” (${Math.round(best.score * 100)}%)`);
-      return;
-    }
-    if (best.distance <= 10 && best.score >= 0.82) {
-      setSelected(cards[0]);
-      setPhase("detail");
-      setQuantity("1");
-      setFinish("normal");
-      setStatus(`Matched “${cards[0].name}” (${Math.round(best.score * 100)}%)`);
-      return;
-    }
-
     setPhase("results");
+    const best = matches[0];
     setStatus(
-      `Top ${cards.length} visual match${cards.length === 1 ? "" : "es"} — pick yours`,
+      `Top ${cards.length} match${cards.length === 1 ? "" : "es"} — confirm “${cards[0].name}” (${Math.round(best.score * 100)}%)`,
     );
   }
 
@@ -141,10 +130,10 @@ export function App() {
     }
     setBusy(true);
     setError(null);
+    setCaptureWarnings([]);
     setStatus(`Looking up “${trimmed}”…`);
     try {
       const cards = await searchCards(trimmed);
-      // Prefer unique cards, keep first edition of each name/cardId
       const seen = new Set<string>();
       const unique: GaCardEdition[] = [];
       for (const c of cards) {
@@ -155,18 +144,13 @@ export function App() {
       }
       setMatchScores({});
       setResults(unique);
+      setSelected(null);
       setPhase("results");
       setStatus(
         unique.length
-          ? `${unique.length} card${unique.length === 1 ? "" : "s"} found`
+          ? `${unique.length} card${unique.length === 1 ? "" : "s"} found — tap to confirm`
           : "No matches — try another name",
       );
-      if (unique.length === 1) {
-        setSelected(unique[0]);
-        setPhase("detail");
-        setQuantity("1");
-        setFinish("normal");
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Search failed");
     } finally {
@@ -174,16 +158,22 @@ export function App() {
     }
   }
 
-  async function handleCapture(blob: Blob, url: string) {
+  async function handleCapture(payload: CapturePayload) {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setPreviewUrl(url);
+    setPreviewUrl(payload.previewUrl);
+    setCaptureWarnings(payload.quality.warnings);
+    setSelected(null);
     setPhase("recognizing");
     setBusy(true);
     setError(null);
-    setStatus("Comparing card art to Grand Archive…");
+    setStatus(
+      payload.quality.warnings.length
+        ? `${payload.quality.warnings[0]} · still matching…`
+        : "Comparing card art to Grand Archive…",
+    );
 
     try {
-      const matches = await matchCardVisually(blob, {
+      const matches = await matchCardVisually(payload.blob, {
         limit: 5,
         maxDistance: 40,
       });
@@ -226,13 +216,27 @@ export function App() {
         previousQuantity,
       });
       setStatus(
-        `Added ×${qty} ${selected.name} (${finishLabel(finish)})`,
+        `Added ×${qty} ${selected.name} (${finishLabel(finish)})${
+          batchMode ? " · ready for next snap" : ""
+        }`,
       );
-      resetScan(true);
-      setPhase("ready");
+      if (batchMode) {
+        setSelected(null);
+        setResults([]);
+        setMatchScores({});
+        setQuantity("1");
+        setFinish("normal");
+        setCaptureWarnings([]);
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        setPreviewUrl(null);
+        setPhase("ready");
+        setBusy(false);
+        setSaving(false);
+      } else {
+        resetScan(true);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save");
-    } finally {
       setSaving(false);
     }
   }
@@ -327,36 +331,67 @@ export function App() {
 
       <main className="main">
         {tab === "scan" && (
-          <>
-            {phase === "detail" && selected ? (
-              <CardDetail
+          <section className="scan">
+            <div className="scan__batch-bar">
+              <label className="scan__batch-toggle">
+                <input
+                  type="checkbox"
+                  checked={batchMode}
+                  onChange={(e) => setBatchMode(e.target.checked)}
+                />
+                Batch scan
+              </label>
+              <span className="muted">
+                {batchMode
+                  ? "Camera stays ready after Save & Next"
+                  : "Returns to idle after each save"}
+              </span>
+            </div>
+
+            <CameraCapture
+              onCapture={(payload) => void handleCapture(payload)}
+              disabled={busy || !indexReady || Boolean(selected)}
+            />
+
+            {captureWarnings.length > 0 && (
+              <div className="banner banner--warn" role="status">
+                {captureWarnings[0]}
+                {captureWarnings.length > 1
+                  ? ` · ${captureWarnings[1]}`
+                  : ""}
+              </div>
+            )}
+
+            {previewUrl && !selected && (
+              <img
+                src={previewUrl}
+                alt="Last capture"
+                className="scan__preview"
+              />
+            )}
+
+            {selected ? (
+              <ScanConfirmSheet
                 card={selected}
                 quantity={quantity}
                 finish={finish}
+                matchScore={matchScores[selected.editionId]}
                 onQuantityChange={setQuantity}
                 onFinishChange={setFinish}
                 onSaveNext={() => void handleSaveNext()}
-                onBack={() => {
+                onWrongCard={() => {
                   setSelected(null);
                   setPhase(results.length ? "results" : "ready");
+                  setStatus(
+                    results.length
+                      ? "Pick another match or retake"
+                      : null,
+                  );
                 }}
                 saving={saving}
               />
             ) : (
-              <section className="scan">
-                <CameraCapture
-                  onCapture={(blob, url) => void handleCapture(blob, url)}
-                  disabled={busy || !indexReady}
-                />
-
-                {previewUrl && (
-                  <img
-                    src={previewUrl}
-                    alt="Last capture"
-                    className="scan__preview"
-                  />
-                )}
-
+              <>
                 <form
                   className="search"
                   onSubmit={(e) => {
@@ -393,22 +428,27 @@ export function App() {
                 {phase === "results" && (
                   <>
                     <ul className="results">
-                      {results.map((card) => (
+                      {results.map((card, idx) => (
                         <li key={card.editionId}>
                           <button
                             type="button"
-                            className="result"
+                            className={
+                              idx === 0 ? "result result--best" : "result"
+                            }
                             onClick={() => {
                               setSelected(card);
                               setQuantity("1");
                               setFinish("normal");
                               setPhase("detail");
-                              setStatus(null);
+                              setStatus(`Confirm ${card.name}`);
                             }}
                           >
                             <img src={card.imageUrl} alt="" loading="lazy" />
                             <span>
-                              <strong>{card.name}</strong>
+                              <strong>
+                                {idx === 0 ? "Best · " : ""}
+                                {card.name}
+                              </strong>
                               <small>
                                 {card.setPrefix} #{card.collectorNumber}
                                 {matchScores[card.editionId] != null
@@ -427,6 +467,8 @@ export function App() {
                         onClick={() => {
                           setResults([]);
                           setMatchScores({});
+                          setCaptureWarnings([]);
+                          setPhase("ready");
                           setStatus(
                             "None matched — retake with even lighting or search by name",
                           );
@@ -437,9 +479,9 @@ export function App() {
                     )}
                   </>
                 )}
-              </section>
+              </>
             )}
-          </>
+          </section>
         )}
 
         {tab === "collection" && (
