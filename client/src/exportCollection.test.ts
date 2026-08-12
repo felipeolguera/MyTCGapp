@@ -71,13 +71,13 @@ describe("exportCollection", () => {
     expect(csv).toContain(
       "Card name,Code,Unit price,Total quantity,Total price",
     );
-    expect(csv).toContain('"Spirit of ""Slime"" (Normal)"');
-    expect(csv).toContain('"Spirit of ""Slime"" (Foil)"');
+    expect(csv).toContain('"Spirit of ""Slime"" (N)"');
+    expect(csv).toContain('"Spirit of ""Slime"" (F)"');
     expect(csv).toContain("ReC-SLM-001,1.25,(3pcs),3.75");
     expect(csv).toContain("ReC-SLM-001,4.50,(2pcs),9.00");
     expect(csv).toContain("TOTAL,,,(5pcs),12.75");
     // Normal before Foil when names/codes match
-    expect(csv.indexOf("(Normal)")).toBeLessThan(csv.indexOf("(Foil)"));
+    expect(csv.indexOf("(N)")).toBeLessThan(csv.indexOf("(F)"));
   });
 
   it("builds share text with clear finishes and TOTAL footer", () => {
@@ -86,10 +86,10 @@ describe("exportCollection", () => {
       "Card name | Code | Unit price | Total quantity | Total price",
     );
     expect(text).toContain(
-      'Spirit of "Slime" (Normal) | ReC-SLM-001 | $1.25 | (3pcs) | $3.75',
+      'Spirit of "Slime" (N) | ReC-SLM-001 | $1.25 | (3pcs) | $3.75',
     );
     expect(text).toContain(
-      'Spirit of "Slime" (Foil) | ReC-SLM-001 | $4.50 | (2pcs) | $9.00',
+      'Spirit of "Slime" (F) | ReC-SLM-001 | $4.50 | (2pcs) | $9.00',
     );
     expect(text).toContain("TOTAL |  |  | (5pcs) | $12.75");
     expect(text).toContain("TCGPlayer market estimates");

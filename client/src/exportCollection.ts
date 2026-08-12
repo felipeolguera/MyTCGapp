@@ -1,7 +1,7 @@
 import { Capacitor } from "@capacitor/core";
 import { Directory, Filesystem } from "@capacitor/filesystem";
 import { Share } from "@capacitor/share";
-import { finishLabel, type CollectionEntry } from "./types";
+import { type CollectionEntry } from "./types";
 import { formatUsd } from "./prices";
 
 export interface ExportRow {
@@ -37,9 +37,14 @@ function csvEscape(value: string): string {
   return value;
 }
 
-/** Always label Normal/Foil so finishes stay distinct when selling. */
+/** Compact finish tag for export: (N) normal, (F) foil. */
+export function exportFinishTag(finish: CollectionEntry["finish"]): string {
+  return finish === "foil" ? "(F)" : "(N)";
+}
+
+/** Always label finish so Normal/Foil stay distinct when selling. */
 export function exportCardName(entry: CollectionEntry): string {
-  return `${entry.card.name} (${finishLabel(entry.finish)})`;
+  return `${entry.card.name} ${exportFinishTag(entry.finish)}`;
 }
 
 /** Set code + collector number, e.g. ReC-SLM-001 */
