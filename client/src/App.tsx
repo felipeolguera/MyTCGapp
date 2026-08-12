@@ -374,31 +374,41 @@ export function App() {
     setLastAdd(null);
   }
 
+  const confirming = Boolean(selected);
+
   return (
-    <div className="app">
-      <header className="topbar">
+    <div className={tab === "collection" ? "app app--collection" : "app"}>
+      <header className={tab === "collection" ? "topbar topbar--compact" : "topbar"}>
         <div>
           <p className="brand">Archive Binder</p>
-          <h1>Grand Archive</h1>
+          <h1>{tab === "collection" ? "Binder" : "Grand Archive"}</h1>
         </div>
         <div className="topbar__stats">
           <span className="topbar__version" title="App version">
             v{APP_VERSION}
           </span>
           <span>{collection?.totalCards ?? 0} owned</span>
-          <span>{sessionAdds} this session</span>
+          {tab === "scan" && <span>{sessionAdds} this session</span>}
         </div>
       </header>
 
       {error && (
         <div className="banner banner--error" role="alert">
-          {error}
+          <span>{error}</span>
+          <button
+            type="button"
+            className="banner__dismiss"
+            onClick={() => setError(null)}
+            aria-label="Dismiss error"
+          >
+            ×
+          </button>
         </div>
       )}
       {status && !error && (
         <div className="banner banner--status">
           <span>{status}</span>
-          {lastAdd && (
+          {lastAdd ? (
             <button
               type="button"
               className="banner__action"
@@ -407,59 +417,72 @@ export function App() {
             >
               {undoing ? "Undoing…" : "Undo"}
             </button>
+          ) : (
+            <button
+              type="button"
+              className="banner__dismiss"
+              onClick={() => setStatus(null)}
+              aria-label="Dismiss status"
+            >
+              ×
+            </button>
           )}
         </div>
       )}
 
       <main className="main">
         {tab === "scan" && (
-          <section className="scan">
-            <div className="scan__batch-bar">
-              <label className="scan__batch-toggle">
-                <input
-                  type="checkbox"
-                  checked={batchMode}
-                  onChange={(e) => setBatchMode(e.target.checked)}
-                />
-                Batch scan
-              </label>
-              <div className="scan__intent" role="group" aria-label="Scan mode">
-                <button
-                  type="button"
-                  className={
-                    scanIntent === "add"
-                      ? "scan__intent-btn scan__intent-btn--active"
-                      : "scan__intent-btn"
+          <section className={confirming ? "scan scan--confirming" : "scan"}>
+            {!confirming && (
+              <div className="scan__batch-bar">
+                <label
+                  className="scan__batch-toggle"
+                  title={
+                    batchMode
+                      ? "Camera stays ready after Save & Next"
+                      : "Returns to idle after each save"
                   }
-                  onClick={() => setScanIntent("add")}
                 >
-                  Add
-                </button>
-                <button
-                  type="button"
-                  className={
-                    scanIntent === "audit"
-                      ? "scan__intent-btn scan__intent-btn--active"
-                      : "scan__intent-btn"
-                  }
-                  onClick={() => setScanIntent("audit")}
-                >
-                  Audit
-                </button>
+                  <input
+                    type="checkbox"
+                    checked={batchMode}
+                    onChange={(e) => setBatchMode(e.target.checked)}
+                  />
+                  Batch
+                </label>
+                <div className="scan__intent" role="group" aria-label="Scan mode">
+                  <button
+                    type="button"
+                    className={
+                      scanIntent === "add"
+                        ? "scan__intent-btn scan__intent-btn--active"
+                        : "scan__intent-btn"
+                    }
+                    onClick={() => setScanIntent("add")}
+                  >
+                    Add
+                  </button>
+                  <button
+                    type="button"
+                    className={
+                      scanIntent === "audit"
+                        ? "scan__intent-btn scan__intent-btn--active"
+                        : "scan__intent-btn"
+                    }
+                    onClick={() => setScanIntent("audit")}
+                    title="Subtract from binder on confirm"
+                  >
+                    Audit
+                  </button>
+                </div>
               </div>
-              <span className="muted">
-                {scanIntent === "audit"
-                  ? "Subtract from binder on confirm"
-                  : batchMode
-                    ? "Camera stays ready after Save & Next"
-                    : "Returns to idle after each save"}
-              </span>
-            </div>
+            )}
 
             <CameraCapture
               onCapture={(payload) => void handleCapture(payload)}
-              disabled={busy || !indexReady || Boolean(selected)}
+              disabled={busy || !indexReady || confirming}
               keepAwake={tab === "scan"}
+              collapsed={confirming}
             />
 
             {captureWarnings.length > 0 && (

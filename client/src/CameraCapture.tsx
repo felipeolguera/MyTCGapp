@@ -12,6 +12,8 @@ interface CameraCaptureProps {
   disabled?: boolean;
   /** Keep the screen awake while the camera is active (Scan tab). */
   keepAwake?: boolean;
+  /** Shrink preview while confirm sheet owns the screen (batch still live). */
+  collapsed?: boolean;
 }
 
 type TorchCapableTrack = MediaStreamTrack & {
@@ -22,6 +24,7 @@ export function CameraCapture({
   onCapture,
   disabled,
   keepAwake = false,
+  collapsed = false,
 }: CameraCaptureProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -178,7 +181,7 @@ export function CameraCapture({
   }
 
   return (
-    <div className="camera">
+    <div className={collapsed ? "camera camera--collapsed" : "camera"}>
       <div className="camera__frame">
         {error ? (
           <div className="camera__fallback">
@@ -193,7 +196,9 @@ export function CameraCapture({
               muted
               aria-label="Card camera preview"
             />
-            <div className="camera__guide" aria-hidden="true" />
+            {!collapsed && (
+              <div className="camera__guide" aria-hidden="true" />
+            )}
             {torchSupported && (
               <button
                 type="button"
@@ -212,31 +217,35 @@ export function CameraCapture({
           </>
         )}
 
-        <button
-          type="button"
-          className="camera__shutter"
-          onClick={() => void handleSnap()}
-          disabled={disabled || !ready || Boolean(error)}
-          aria-label="Snap card"
-        >
-          <svg
-            className="camera__shutter-icon"
-            viewBox="0 0 24 24"
-            width="28"
-            height="28"
-            aria-hidden="true"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.75"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+        {!collapsed && (
+          <button
+            type="button"
+            className="camera__shutter"
+            onClick={() => void handleSnap()}
+            disabled={disabled || !ready || Boolean(error)}
+            aria-label="Snap card"
           >
-            <path d="M4.5 8.5h2.2l1.2-2h8.2l1.2 2h2.2a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18v-8a1.5 1.5 0 0 1 1.5-1.5Z" />
-            <circle cx="12" cy="14" r="3.25" />
-          </svg>
-        </button>
+            <svg
+              className="camera__shutter-icon"
+              viewBox="0 0 24 24"
+              width="28"
+              height="28"
+              aria-hidden="true"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.75"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M4.5 8.5h2.2l1.2-2h8.2l1.2 2h2.2a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18v-8a1.5 1.5 0 0 1 1.5-1.5Z" />
+              <circle cx="12" cy="14" r="3.25" />
+            </svg>
+          </button>
+        )}
       </div>
-      <p className="camera__tip">Fill the guide · avoid glare · hold steady</p>
+      {!collapsed && (
+        <p className="camera__tip">Fill the guide · avoid glare · hold steady</p>
+      )}
     </div>
   );
 }

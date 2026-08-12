@@ -143,6 +143,8 @@ export function CollectionView({
   );
   const [movers, setMovers] = useState<PriceMover[]>(() => readMovers());
   const [showMovers, setShowMovers] = useState(false);
+  const [showTools, setShowTools] = useState(false);
+  const [showSell, setShowSell] = useState(false);
   const [canUndo, setCanUndo] = useState(() => {
     const last = peekLastSale();
     return Boolean(last && canUndoSale(last));
@@ -189,9 +191,7 @@ export function CollectionView({
   );
 
   const totalValue = priced.reduce((sum, row) => sum + (row.line ?? 0), 0);
-  const pricedCount = priced.filter((r) => r.line != null).length;
   const visibleCards = visible.reduce((sum, row) => sum + row.entry.quantity, 0);
-  const visibleValue = visible.reduce((sum, row) => sum + (row.line ?? 0), 0);
   const visibleAskingTotal = sumAskingTotal(visible);
   const filtered =
     query.trim() !== "" ||
@@ -858,80 +858,114 @@ export function CollectionView({
       <header className="collection-view__header">
         <div>
           <h2>Collection</h2>
-          <p className="muted">
+          <p className="muted collection-view__summary">
             {collection.totalCards} cards · {collection.uniqueCards} unique
             {index
-              ? ` · ~${formatUsd(totalValue)} (${pricedCount}/${collection.uniqueCards} priced)`
+              ? ` · ~${formatUsd(totalValue)}`
+              : ""}
+            {filtered
+              ? ` · showing ${visibleCards}`
               : ""}
           </p>
-          <p className="muted collection-view__backup-meta">
+          <p className="muted collection-view__meta-line">
             {formatBackupAge(backupMeta)}
             {" · "}
             {formatPriceIndexAge(index)}
-          </p>
-          <p className="muted collection-view__ledger-meta">
+            {" · "}
             {ledgerSummary}
-            {canUndo ? " · undo available" : ""}
+            {canUndo ? " · undo" : ""}
+            {movers.length > 0
+              ? ` · ${formatMoversSummary(movers)}`
+              : ""}
           </p>
-          {movers.length > 0 && (
-            <p className="muted collection-view__movers-meta">
-              {formatMoversSummary(movers)} since last refresh
-            </p>
-          )}
-          {filtered && (
-            <p className="muted collection-view__filter-meta">
-              Showing {visibleCards} cards · {visible.length} lines
-              {index ? ` · ~${formatUsd(visibleValue)}` : ""}
-            </p>
-          )}
         </div>
         <div className="collection-view__actions">
           <button
             type="button"
+            className={
+              showTools
+                ? "btn btn--ghost btn--compact btn--toggle-on"
+                : "btn btn--ghost btn--compact"
+            }
+            aria-expanded={showTools}
+            onClick={() => {
+              setShowTools((v) => !v);
+              if (!showTools) setShowSell(false);
+            }}
+          >
+            Tools
+          </button>
+          <button
+            type="button"
+            className={
+              showSell
+                ? "btn btn--ghost btn--compact btn--toggle-on"
+                : "btn btn--ghost btn--compact"
+            }
+            aria-expanded={showSell}
+            onClick={() => {
+              setShowSell((v) => !v);
+              if (!showSell) setShowTools(false);
+            }}
+            disabled={selectMode}
+          >
+            Sell
+          </button>
+          <button
+            type="button"
             className="btn btn--primary btn--compact"
-            onClick={() => void handleExport(false)}
-            disabled={exporting || visible.length === 0 || selectMode}
-          >
-            {exporting ? "Preparing…" : filtered ? "Export view" : "Export"}
-          </button>
-          <button
-            type="button"
-            className="btn btn--ghost btn--compact"
-            onClick={() => void handleRefreshPrices()}
-            disabled={refreshingPrices}
-          >
-            {refreshingPrices ? "Prices…" : "Refresh prices"}
-          </button>
-          <button
-            type="button"
-            className="btn btn--ghost btn--compact"
-            onClick={() => void handleBackup()}
-            disabled={exporting}
-          >
-            Backup
-          </button>
-          <button
-            type="button"
-            className="btn btn--ghost btn--compact"
-            onClick={() => void handleRestore()}
-          >
-            Restore
-          </button>
-          <button
-            type="button"
-            className="btn btn--ghost btn--compact"
             onClick={() => {
               if (selectMode) exitSelectMode();
               else {
                 closeEditor();
+                setShowTools(false);
+                setShowSell(false);
                 setSelectMode(true);
               }
             }}
           >
-            {selectMode ? "Cancel select" : "Select"}
+            {selectMode ? "Done" : "Select"}
           </button>
         </div>
       </header>
+
+      {showTools && !selectMode && (
+        <div className="panel-sheet" role="region" aria-label="Collection tools">
+          <div className="panel-sheet__actions">
+            <button
+              type="button"
+              className="btn btn--primary btn--compact"
+              onClick={() => void handleExport(false)}
+              disabled={exporting || visible.length === 0}
+            >
+              {exporting ? "Preparing…" : filtered ? "Export view" : "Export"}
+            </button>
+            <button
+              type="button"
+              className="btn btn--ghost btn--compact"
+              onClick={() => void handleRefreshPrices()}
+              disabled={refreshingPrices}
+            >
+              {refreshingPrices ? "Prices…" : "Refresh prices"}
+            </button>
+            <button
+              type="button"
+              className="btn btn--ghost btn--compact"
+              onClick={() => void handleBackup()}
+              disabled={exporting}
+            >
+              Backup
+            </button>
+            <button
+              type="button"
+              className="btn btn--ghost btn--compact"
+              onClick={() => void handleRestore()}
+            >
+              Restore
+            </button>
+          </div>
+        </div>
+      )}
 
       {backupReminder && (
         <p
@@ -1059,91 +1093,91 @@ export function CollectionView({
         </div>
       )}
 
-      <div className="sell-toolbar">
-        <div className="sell-toolbar__total">
-          <span className="sell-toolbar__label">View total</span>
-          <strong>{formatUsd(visibleAskingTotal)}</strong>
-        </div>
-        <div className="sell-toolbar__actions">
-          <button
-            type="button"
-            className="btn btn--ghost btn--compact"
-            onClick={() => void handleCopyAskingTotal()}
-            disabled={visible.length === 0 || selectMode}
-          >
-            Copy total
-          </button>
-          <button
-            type="button"
-            className="btn btn--ghost btn--compact"
-            onClick={() => void handleBulkForSale(true)}
-            disabled={visible.length === 0 || bulkBusy || selectMode}
-          >
-            Mark for sale
-          </button>
-          <button
-            type="button"
-            className="btn btn--ghost btn--compact"
-            onClick={() => void handleBulkForSale(false)}
-            disabled={visible.length === 0 || bulkBusy || selectMode}
-          >
-            Clear sale
-          </button>
-          <button
-            type="button"
-            className="btn btn--primary btn--compact"
-            onClick={() => void handleExport(true)}
-            disabled={exporting || visible.length === 0 || selectMode}
-          >
-            Sell sheet
-          </button>
-          <button
-            type="button"
-            className="btn btn--ghost btn--compact"
-            onClick={() => void handleUndoLastSale()}
-            disabled={!canUndo || bulkBusy || selectMode}
-          >
-            Undo sale
-          </button>
-        </div>
-      </div>
+      {showSell && !selectMode && (
+        <div className="panel-sheet panel-sheet--sell" role="region" aria-label="Sell tools">
+          <div className="sell-toolbar">
+            <div className="sell-toolbar__total">
+              <span className="sell-toolbar__label">View total</span>
+              <strong>{formatUsd(visibleAskingTotal)}</strong>
+            </div>
+            <div className="sell-toolbar__actions">
+              <button
+                type="button"
+                className="btn btn--ghost btn--compact"
+                onClick={() => void handleCopyAskingTotal()}
+                disabled={visible.length === 0}
+              >
+                Copy total
+              </button>
+              <button
+                type="button"
+                className="btn btn--ghost btn--compact"
+                onClick={() => void handleBulkForSale(true)}
+                disabled={visible.length === 0 || bulkBusy}
+              >
+                Mark for sale
+              </button>
+              <button
+                type="button"
+                className="btn btn--ghost btn--compact"
+                onClick={() => void handleBulkForSale(false)}
+                disabled={visible.length === 0 || bulkBusy}
+              >
+                Clear sale
+              </button>
+              <button
+                type="button"
+                className="btn btn--primary btn--compact"
+                onClick={() => void handleExport(true)}
+                disabled={exporting || visible.length === 0}
+              >
+                Sell sheet
+              </button>
+              <button
+                type="button"
+                className="btn btn--ghost btn--compact"
+                onClick={() => void handleUndoLastSale()}
+                disabled={!canUndo || bulkBusy}
+              >
+                Undo sale
+              </button>
+            </div>
+          </div>
 
-      <div className="ask-toolbar">
-        <label className="ask-toolbar__field" htmlFor="ask-percent">
-          <span>Ask %</span>
-          <input
-            id="ask-percent"
-            value={askPercent}
-            onChange={(e) => setAskPercent(e.target.value)}
-            inputMode="decimal"
-            disabled={selectMode || bulkBusy}
-            aria-label="Asking price as percent of market"
-          />
-        </label>
-        <button
-          type="button"
-          className="btn btn--ghost btn--compact"
-          onClick={() => void handleBulkAskPercent()}
-          disabled={visible.length === 0 || bulkBusy || selectMode}
-        >
-          Ask = market × %
-        </button>
-        <label className="ask-toolbar__field" htmlFor="alert-threshold">
-          <span>Alert ≥%</span>
-          <input
-            id="alert-threshold"
-            value={alertThreshold}
-            onChange={(e) => setAlertThreshold(e.target.value)}
-            onBlur={handleSaveAlertThreshold}
-            inputMode="decimal"
-            disabled={selectMode}
-            aria-label="Price alert threshold percent"
-          />
-        </label>
-        <span className="muted ask-toolbar__hint">
-          Alerts compare owned markets to the last refresh
-        </span>
-      </div>
+          <div className="ask-toolbar">
+            <label className="ask-toolbar__field" htmlFor="ask-percent">
+              <span>Ask %</span>
+              <input
+                id="ask-percent"
+                value={askPercent}
+                onChange={(e) => setAskPercent(e.target.value)}
+                inputMode="decimal"
+                disabled={bulkBusy}
+                aria-label="Asking price as percent of market"
+              />
+            </label>
+            <button
+              type="button"
+              className="btn btn--ghost btn--compact"
+              onClick={() => void handleBulkAskPercent()}
+              disabled={visible.length === 0 || bulkBusy}
+            >
+              Ask = market × %
+            </button>
+            <label className="ask-toolbar__field" htmlFor="alert-threshold">
+              <span>Alert ≥%</span>
+              <input
+                id="alert-threshold"
+                value={alertThreshold}
+                onChange={(e) => setAlertThreshold(e.target.value)}
+                onBlur={handleSaveAlertThreshold}
+                inputMode="decimal"
+                aria-label="Price alert threshold percent"
+              />
+            </label>
+          </div>
+        </div>
+      )}
 
       <div className="collection-toolbar">
         <label className="collection-toolbar__search" htmlFor="collection-query">
@@ -1215,11 +1249,6 @@ export function CollectionView({
           </label>
         </div>
       </div>
-
-      <p className="collection-view__export-hint muted">
-        Mark filtered cards for sale, copy the view total for listings, or export
-        a sell sheet (for-sale lines only, with condition).
-      </p>
 
       {exportArtifacts && (
         <div className="export-preview" role="dialog" aria-label="Export preview">
