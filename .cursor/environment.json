@@ -1,0 +1,20 @@
+{
+  "name": "MyTCGapp",
+  "install": "npm install",
+  "terminals": [
+    {
+      "name": "api",
+      "command": "npm run dev:server",
+      "description": "Express + TypeScript API (tsx watch) serving card and deck endpoints on http://localhost:3001"
+    },
+    {
+      "name": "web",
+      "command": "npm run dev:client",
+      "description": "Vite + React dev server on http://localhost:5173 (proxies /api to the API terminal)"
+    }
+  ],
+  "ports": [
+    { "name": "api", "port": 3001 },
+    { "name": "web", "port": 5173 }
+  ]
+}
