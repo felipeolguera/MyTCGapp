@@ -379,9 +379,18 @@ export function App() {
   return (
     <div className={tab === "collection" ? "app app--collection" : "app"}>
       <header className={tab === "collection" ? "topbar topbar--compact" : "topbar"}>
-        <div>
-          <p className="brand">Archive Binder</p>
-          <h1>{tab === "collection" ? "Binder" : "Grand Archive"}</h1>
+        <div className="topbar__brand">
+          <img
+            className="topbar__logo"
+            src="/icons/brand-mark.png"
+            alt=""
+            width={40}
+            height={40}
+          />
+          <div>
+            <p className="brand">Archive Binder</p>
+            <h1>{tab === "collection" ? "Binder" : "Grand Archive"}</h1>
+          </div>
         </div>
         <div className="topbar__stats">
           <span className="topbar__version" title="App version">

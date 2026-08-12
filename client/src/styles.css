@@ -84,6 +84,29 @@ textarea {
   margin-bottom: 0.35rem;
 }
 
+.topbar__brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.topbar__logo {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.7rem;
+  flex-shrink: 0;
+  border: 1px solid rgba(212, 175, 108, 0.28);
+  background: #0a0f15;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.35);
+}
+
+.topbar--compact .topbar__logo {
+  width: 2.15rem;
+  height: 2.15rem;
+  border-radius: 0.6rem;
+}
+
 .brand {
   margin: 0;
   letter-spacing: 0.16em;
