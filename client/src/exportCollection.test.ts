@@ -53,7 +53,7 @@ describe("exportCollection", () => {
       "Card name,Code,Unit price,Total quantity,Total price",
     );
     expect(csv).toContain('"Spirit of ""Slime"" (Foil)"');
-    expect(csv).toContain("ReC-SLM-001,4.50,2,9.00");
+    expect(csv).toContain("ReC-SLM-001,4.50,(2pcs),9.00");
   });
 
   it("builds a shareable inventory with the same columns", () => {
@@ -67,7 +67,7 @@ describe("exportCollection", () => {
       "Card name | Code | Unit price | Total quantity | Total price",
     );
     expect(text).toContain(
-      'Spirit of "Slime" (Foil) | ReC-SLM-001 | $4.50 | 2 | $9.00',
+      'Spirit of "Slime" (Foil) | ReC-SLM-001 | $4.50 | (2pcs) | $9.00',
     );
   });
 });

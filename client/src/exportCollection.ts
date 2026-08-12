@@ -28,6 +28,11 @@ export function exportCardCode(entry: CollectionEntry): string {
   return `${prefix}-${num}`;
 }
 
+/** Quantity label for export, e.g. (14pcs) */
+export function exportQuantity(quantity: number): string {
+  return `(${quantity}pcs)`;
+}
+
 /** Spreadsheet inventory: Card name, Code, Unit price, Total quantity, Total price. */
 export function buildCollectionCsv(rows: ExportRow[]): string {
   const header = [
@@ -44,7 +49,7 @@ export function buildCollectionCsv(rows: ExportRow[]): string {
         csvEscape(exportCardName(entry)),
         csvEscape(exportCardCode(entry)),
         unit != null ? unit.toFixed(2) : "",
-        String(entry.quantity),
+        csvEscape(exportQuantity(entry.quantity)),
         line != null ? line.toFixed(2) : "",
       ].join(","),
     );
@@ -72,7 +77,7 @@ export function buildCollectionShareText(
         exportCardName(entry),
         exportCardCode(entry),
         unit != null ? formatUsd(unit) : "—",
-        String(entry.quantity),
+        exportQuantity(entry.quantity),
         line != null ? formatUsd(line) : "—",
       ].join(" | "),
     );
