@@ -1,3 +1,6 @@
+import { Capacitor } from "@capacitor/core";
+import { Directory, Filesystem } from "@capacitor/filesystem";
+import { Share } from "@capacitor/share";
 import { finishLabel, type CollectionEntry } from "./types";
 import { formatUsd } from "./prices";
 
@@ -13,6 +16,18 @@ export interface ExportTotals {
   unique: number;
   market: number;
   priced: number;
+}
+
+export interface ExportArtifacts {
+  stamp: string;
+  csvName: string;
+  imageName: string;
+  csv: string;
+  text: string;
+  csvBlob: Blob;
+  imageBlob: Blob | null;
+  /** Object URL for in-app preview; revoke when done. */
+  imagePreviewUrl: string | null;
 }
 
 function csvEscape(value: string): string {
@@ -180,14 +195,12 @@ export async function buildCollectionShareImage(
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
 
-  // Background
   const bg = ctx.createLinearGradient(0, 0, 0, height);
   bg.addColorStop(0, "#0d1219");
   bg.addColorStop(1, "#07090d");
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, width, height);
 
-  // Accent rule
   ctx.fillStyle = "#d4af6c";
   ctx.fillRect(0, 0, width, 6);
 
@@ -208,7 +221,6 @@ export async function buildCollectionShareImage(
     136,
   );
 
-  // Column headers
   const cols = [
     { label: "Card name", x: padX, w: 420 },
     { label: "Code", x: padX + 430, w: 170 },
@@ -249,7 +261,6 @@ export async function buildCollectionShareImage(
     ctx.fillText(totalPriceText(line), cols[4].x, y);
   }
 
-  // Totals footer
   const footY = headerH + sorted.length * rowH + 56;
   ctx.strokeStyle = "rgba(212,175,108,0.35)";
   ctx.beginPath();
@@ -291,6 +302,17 @@ function truncate(
   return cut + ellipsis;
 }
 
+async function blobToBase64(blob: Blob): Promise<string> {
+  const buffer = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -303,19 +325,11 @@ function downloadBlob(blob: Blob, filename: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
-export type ExportResult =
-  | { mode: "shared" }
-  | { mode: "downloaded" }
-  | { mode: "copied" };
-
-/**
- * Prefer native share (list + CSV + checklist image), else download files
- * and copy the text list.
- */
-export async function exportCollectionInventory(
+/** Build CSV + checklist PNG for preview / share (no PDF). */
+export async function prepareExportArtifacts(
   rows: ExportRow[],
   totals: ExportTotals,
-): Promise<ExportResult> {
+): Promise<ExportArtifacts> {
   const stamp = new Date().toISOString().slice(0, 10);
   const csvName = `archive-binder-collection-${stamp}.csv`;
   const imageName = `archive-binder-collection-${stamp}.png`;
@@ -323,12 +337,116 @@ export async function exportCollectionInventory(
   const text = buildCollectionShareText(rows, totals);
   const csvBlob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const imageBlob = await buildCollectionShareImage(rows, totals);
+  return {
+    stamp,
+    csvName,
+    imageName,
+    csv,
+    text,
+    csvBlob,
+    imageBlob,
+    imagePreviewUrl: imageBlob ? URL.createObjectURL(imageBlob) : null,
+  };
+}
 
+export function revokeExportArtifacts(artifacts: ExportArtifacts | null) {
+  if (artifacts?.imagePreviewUrl) {
+    URL.revokeObjectURL(artifacts.imagePreviewUrl);
+  }
+}
+
+async function writeNativeFile(
+  filename: string,
+  blob: Blob,
+  directory: Directory,
+): Promise<string> {
+  const data = await blobToBase64(blob);
+  const written = await Filesystem.writeFile({
+    path: `ArchiveBinder/${filename}`,
+    data,
+    directory,
+    recursive: true,
+  });
+  if (written.uri) return written.uri;
+  const uri = await Filesystem.getUri({
+    path: `ArchiveBinder/${filename}`,
+    directory,
+  });
+  return uri.uri;
+}
+
+/**
+ * Save checklist image + CSV on device, then open the system share sheet.
+ * Files land under Documents/ArchiveBinder on Android.
+ */
+export async function shareExportArtifacts(
+  artifacts: ExportArtifacts,
+): Promise<{ mode: "shared" | "saved"; pathHint: string }> {
+  const pathHint = "Documents/ArchiveBinder";
+
+  if (Capacitor.isNativePlatform()) {
+    const fileUris: string[] = [];
+    // Cache for reliable FileProvider sharing; also mirror into Documents.
+    if (artifacts.imageBlob) {
+      const cacheUri = await writeNativeFile(
+        artifacts.imageName,
+        artifacts.imageBlob,
+        Directory.Cache,
+      );
+      fileUris.push(cacheUri);
+      try {
+        await writeNativeFile(
+          artifacts.imageName,
+          artifacts.imageBlob,
+          Directory.Documents,
+        );
+      } catch {
+        // Documents may be restricted on some devices; Cache share still works.
+      }
+    }
+    try {
+      await writeNativeFile(
+        artifacts.csvName,
+        artifacts.csvBlob,
+        Directory.Documents,
+      );
+    } catch {
+      const csvCache = await writeNativeFile(
+        artifacts.csvName,
+        artifacts.csvBlob,
+        Directory.Cache,
+      );
+      fileUris.push(csvCache);
+    }
+
+    try {
+      await Share.share({
+        title: "Grand Archive collection for sale",
+        text: artifacts.text,
+        files: fileUris.length ? fileUris : undefined,
+        dialogTitle: "Share collection export",
+      });
+      return { mode: "shared", pathHint };
+    } catch (err) {
+      if (err instanceof Error && /cancel|abort/i.test(err.message)) {
+        throw new DOMException("Share cancelled", "AbortError");
+      }
+      // Fall through to web paths if Share fails.
+    }
+  }
+
+  // Web / fallback: Web Share API, else browser download.
   const files: File[] = [];
   if (typeof File !== "undefined") {
-    files.push(new File([csvBlob], csvName, { type: "text/csv" }));
-    if (imageBlob) {
-      files.push(new File([imageBlob], imageName, { type: "image/png" }));
+    files.push(
+      new File([artifacts.csvBlob], artifacts.csvName, { type: "text/csv" }),
+    );
+    if (artifacts.imageBlob) {
+      files.push(
+        new File([artifacts.imageBlob], artifacts.imageName, {
+          type: "image/png",
+        }),
+      );
     }
   }
 
@@ -336,38 +454,52 @@ export async function exportCollectionInventory(
     try {
       const payload: ShareData = {
         title: "Grand Archive collection for sale",
-        text,
+        text: artifacts.text,
       };
       if (files.length && navigator.canShare?.({ files })) {
         payload.files = files;
       } else if (
-        imageBlob &&
-        files.length === 2 &&
+        files.length > 1 &&
         navigator.canShare?.({ files: [files[1]] })
       ) {
-        // Some Android WebViews accept image but not CSV.
         payload.files = [files[1]];
       }
       await navigator.share(payload);
-      return { mode: "shared" };
+      return { mode: "shared", pathHint: "Share sheet" };
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") {
-        throw err;
-      }
+      if (err instanceof DOMException && err.name === "AbortError") throw err;
     }
   }
 
-  downloadBlob(csvBlob, csvName);
-  if (imageBlob) downloadBlob(imageBlob, imageName);
-
+  downloadBlob(artifacts.csvBlob, artifacts.csvName);
+  if (artifacts.imageBlob) {
+    downloadBlob(artifacts.imageBlob, artifacts.imageName);
+  }
   try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return { mode: "copied" };
-    }
+    await navigator.clipboard?.writeText?.(artifacts.text);
   } catch {
-    // Clipboard may be blocked; downloads still succeeded.
+    // ignore
+  }
+  return { mode: "saved", pathHint: "Downloads (browser)" };
+}
+
+/** Save only the checklist PNG (for “Save image” from the preview). */
+export async function saveExportImage(
+  artifacts: ExportArtifacts,
+): Promise<string> {
+  if (!artifacts.imageBlob) {
+    throw new Error("Checklist image was not generated");
   }
 
-  return { mode: "downloaded" };
+  if (Capacitor.isNativePlatform()) {
+    await writeNativeFile(
+      artifacts.imageName,
+      artifacts.imageBlob,
+      Directory.Documents,
+    );
+    return `Documents/ArchiveBinder/${artifacts.imageName}`;
+  }
+
+  downloadBlob(artifacts.imageBlob, artifacts.imageName);
+  return artifacts.imageName;
 }
