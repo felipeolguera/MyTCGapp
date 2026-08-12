@@ -74,7 +74,9 @@ function summarize(entries: CollectionEntry[]): CollectionSummary {
   const sorted = [...entries].sort((a, b) => {
     const name = a.card.name.localeCompare(b.card.name);
     if (name) return name;
-    return a.finish.localeCompare(b.finish);
+    // Normal before Foil
+    if (a.finish === b.finish) return 0;
+    return a.finish === "normal" ? -1 : 1;
   });
   return {
     entries: sorted,
@@ -91,7 +93,11 @@ export function addLocalCollection(
   card: GaCardEdition,
   quantity: number,
   finish: CardFinish = "normal",
-): { entry: CollectionEntry; collection: CollectionSummary } {
+): {
+  entry: CollectionEntry;
+  collection: CollectionSummary;
+  previousQuantity: number;
+} {
   if (!Number.isInteger(quantity) || quantity < 1 || quantity > 999) {
     throw new Error("quantity must be an integer from 1 to 999");
   }
@@ -99,11 +105,12 @@ export function addLocalCollection(
   const id = collectionEntryId(card.editionId, finish);
   const entries = readEntries();
   const existing = entries.find((e) => e.id === id);
+  const previousQuantity = existing?.quantity ?? 0;
   const entry: CollectionEntry = {
     id,
     editionId: card.editionId,
     finish,
-    quantity: (existing?.quantity ?? 0) + quantity,
+    quantity: previousQuantity + quantity,
     card,
     updatedAt: new Date().toISOString(),
   };
@@ -113,5 +120,69 @@ export function addLocalCollection(
     : [...entries, entry];
 
   writeEntries(next);
+  return { entry, collection: summarize(next), previousQuantity };
+}
+
+/**
+ * Set absolute quantity for an entry. Quantity 0 removes it.
+ * Changing finish moves/replaces the line (merges into existing finish if any).
+ */
+export function updateLocalCollection(
+  id: string,
+  quantity: number,
+  finish: CardFinish,
+  card?: GaCardEdition,
+): { entry: CollectionEntry; collection: CollectionSummary } {
+  if (!Number.isInteger(quantity) || quantity < 0 || quantity > 999) {
+    throw new Error("quantity must be an integer from 0 to 999");
+  }
+
+  const entries = readEntries();
+  const existing = entries.find((e) => e.id === id);
+  const cardPayload = card ?? existing?.card;
+  if (!cardPayload) {
+    throw new Error("card not found in collection");
+  }
+
+  const targetId = collectionEntryId(cardPayload.editionId, finish);
+  let next = entries.filter((e) => e.id !== id && e.id !== targetId);
+
+  if (quantity === 0) {
+    writeEntries(next);
+    return {
+      entry: {
+        id: targetId,
+        editionId: cardPayload.editionId,
+        finish,
+        quantity: 0,
+        card: cardPayload,
+        updatedAt: new Date().toISOString(),
+      },
+      collection: summarize(next),
+    };
+  }
+
+  // If moving finish onto an existing line, replace with the edited quantity
+  // (absolute set — editor shows the stack being saved).
+  const entry: CollectionEntry = {
+    id: targetId,
+    editionId: cardPayload.editionId,
+    finish,
+    quantity,
+    card: cardPayload,
+    updatedAt: new Date().toISOString(),
+  };
+  next = [...next, entry];
+  writeEntries(next);
   return { entry, collection: summarize(next) };
+}
+
+export function removeLocalCollection(
+  id: string,
+): { collection: CollectionSummary; removed: boolean } {
+  const entries = readEntries();
+  const next = entries.filter((e) => e.id !== id);
+  const removed = next.length !== entries.length;
+  if (removed) writeEntries(next);
+  return { collection: summarize(next), removed };
 }

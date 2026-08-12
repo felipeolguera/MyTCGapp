@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { addToCollection, fetchCollection, searchCards } from "./api";
+import {
+  addToCollection,
+  fetchCollection,
+  removeFromCollection,
+  searchCards,
+  updateCollectionEntry,
+} from "./api";
 import { CameraCapture } from "./CameraCapture";
 import { CardDetail } from "./CardDetail";
 import { CollectionView } from "./CollectionView";
@@ -11,6 +17,15 @@ import type {
   ScanPhase,
   TabId,
 } from "./types";
+import { finishLabel } from "./types";
+
+interface LastAdd {
+  entryId: string;
+  card: GaCardEdition;
+  finish: CardFinish;
+  addedQty: number;
+  previousQuantity: number;
+}
 
 export function App() {
   const [tab, setTab] = useState<TabId>("scan");
@@ -30,6 +45,8 @@ export function App() {
   const [collection, setCollection] = useState<CollectionSummary | null>(null);
   const [collectionLoading, setCollectionLoading] = useState(true);
   const [sessionAdds, setSessionAdds] = useState(0);
+  const [lastAdd, setLastAdd] = useState<LastAdd | null>(null);
+  const [undoing, setUndoing] = useState(false);
 
   const refreshCollection = useCallback(async () => {
     setCollectionLoading(true);
@@ -190,11 +207,22 @@ export function App() {
     setSaving(true);
     setError(null);
     try {
-      const { collection: next } = await addToCollection(selected, qty, finish);
+      const { entry, collection: next, previousQuantity } = await addToCollection(
+        selected,
+        qty,
+        finish,
+      );
       setCollection(next);
       setSessionAdds((n) => n + qty);
+      setLastAdd({
+        entryId: entry.id,
+        card: selected,
+        finish,
+        addedQty: qty,
+        previousQuantity,
+      });
       setStatus(
-        `Added ×${qty} ${selected.name} (${finish === "foil" ? "Foil" : "Normal"})`,
+        `Added ×${qty} ${selected.name} (${finishLabel(finish)})`,
       );
       resetScan(true);
       setPhase("ready");
@@ -203,6 +231,52 @@ export function App() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handleUndoLastAdd() {
+    if (!lastAdd || undoing) return;
+    setUndoing(true);
+    setError(null);
+    try {
+      const { collection: next } = await updateCollectionEntry(
+        lastAdd.entryId,
+        lastAdd.previousQuantity,
+        lastAdd.finish,
+        lastAdd.card,
+      );
+      setCollection(next);
+      setSessionAdds((n) => Math.max(0, n - lastAdd.addedQty));
+      setStatus(
+        `Undid ×${lastAdd.addedQty} ${lastAdd.card.name} (${finishLabel(lastAdd.finish)})`,
+      );
+      setLastAdd(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not undo");
+    } finally {
+      setUndoing(false);
+    }
+  }
+
+  async function handleUpdateEntry(
+    id: string,
+    quantity: number,
+    finish: CardFinish,
+    card: GaCardEdition,
+  ) {
+    const { collection: next } = await updateCollectionEntry(
+      id,
+      quantity,
+      finish,
+      card,
+    );
+    setCollection(next);
+    setLastAdd(null);
+  }
+
+  async function handleDeleteEntry(id: string) {
+    const { collection: next } = await removeFromCollection(id);
+    setCollection(next);
+    setLastAdd(null);
   }
 
   return (
@@ -223,7 +297,21 @@ export function App() {
           {error}
         </div>
       )}
-      {status && !error && <div className="banner banner--status">{status}</div>}
+      {status && !error && (
+        <div className="banner banner--status">
+          <span>{status}</span>
+          {lastAdd && (
+            <button
+              type="button"
+              className="banner__action"
+              onClick={() => void handleUndoLastAdd()}
+              disabled={undoing}
+            >
+              {undoing ? "Undoing…" : "Undo"}
+            </button>
+          )}
+        </div>
+      )}
 
       <main className="main">
         {tab === "scan" && (
@@ -349,6 +437,8 @@ export function App() {
             onRefresh={() => void refreshCollection()}
             onStatus={setStatus}
             onError={setError}
+            onUpdateEntry={handleUpdateEntry}
+            onDeleteEntry={handleDeleteEntry}
           />
         )}
       </main>

@@ -1,6 +1,11 @@
 import type { CardFinish, CollectionEntry, CollectionSummary, GaCardEdition } from "./types";
 import { searchGaCardsDirect } from "./gatcgClient";
-import { addLocalCollection, getLocalCollection } from "./localCollection";
+import {
+  addLocalCollection,
+  getLocalCollection,
+  removeLocalCollection,
+  updateLocalCollection,
+} from "./localCollection";
 
 /** Native/APK builds talk to GATCG + localStorage; web/dev can use the Express API. */
 export function isStandaloneMode(): boolean {
@@ -39,15 +44,62 @@ export async function addToCollection(
   card: GaCardEdition,
   quantity: number,
   finish: CardFinish = "normal",
-): Promise<{ entry: CollectionEntry; collection: CollectionSummary }> {
+): Promise<{
+  entry: CollectionEntry;
+  collection: CollectionSummary;
+  previousQuantity: number;
+}> {
   if (isStandaloneMode()) {
     return addLocalCollection(card, quantity, finish);
   }
-  return json(
+  const data = await json<{
+    entry: CollectionEntry;
+    collection: CollectionSummary;
+    previousQuantity?: number;
+  }>(
     await fetch("/api/collection", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ card, quantity, finish }),
+    }),
+  );
+  return {
+    ...data,
+    previousQuantity: data.previousQuantity ?? data.entry.quantity - quantity,
+  };
+}
+
+export async function updateCollectionEntry(
+  id: string,
+  quantity: number,
+  finish: CardFinish,
+  card: GaCardEdition,
+): Promise<{ entry: CollectionEntry; collection: CollectionSummary }> {
+  if (isStandaloneMode()) {
+    return updateLocalCollection(id, quantity, finish, card);
+  }
+  return json(
+    await fetch(`/api/collection/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ card, quantity, finish }),
+    }),
+  );
+}
+
+export async function removeFromCollection(
+  id: string,
+): Promise<{ collection: CollectionSummary }> {
+  if (isStandaloneMode()) {
+    const result = removeLocalCollection(id);
+    if (!result.removed) {
+      throw new Error("Card not in collection");
+    }
+    return { collection: result.collection };
+  }
+  return json(
+    await fetch(`/api/collection/${encodeURIComponent(id)}`, {
+      method: "DELETE",
     }),
   );
 }

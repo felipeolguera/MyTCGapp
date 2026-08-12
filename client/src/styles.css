@@ -106,9 +106,29 @@ input {
 }
 
 .banner--status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
   background: rgba(125, 206, 160, 0.1);
   color: var(--ok);
   border: 1px solid rgba(125, 206, 160, 0.2);
+}
+
+.banner__action {
+  border: 1px solid rgba(125, 206, 160, 0.45);
+  background: rgba(125, 206, 160, 0.16);
+  color: var(--ok);
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.banner__action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .main {
@@ -227,6 +247,14 @@ input {
   color: var(--text-soft);
   padding-left: 0;
   padding-right: 0;
+}
+
+.btn--danger {
+  width: 100%;
+  background: rgba(255, 100, 100, 0.12);
+  color: var(--danger);
+  border: 1px solid rgba(255, 100, 100, 0.28);
+  font-weight: 700;
 }
 
 .search {
@@ -583,13 +611,32 @@ input {
 
 .collection-row {
   display: grid;
-  grid-template-columns: 48px 1fr auto;
-  gap: 0.7rem;
+  grid-template-columns: 1fr auto;
+  gap: 0.35rem;
   align-items: center;
-  padding: 0.55rem;
+  padding: 0.35rem 0.45rem 0.35rem 0.35rem;
   border-radius: 14px;
   background: var(--panel);
   border: 1px solid var(--line);
+}
+
+.collection-row__main {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  gap: 0.7rem;
+  align-items: center;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  padding: 0.2rem;
+  cursor: pointer;
+  border-radius: 10px;
+}
+
+.collection-row__main:active {
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .collection-row__thumb {
@@ -652,6 +699,49 @@ input {
   color: var(--text-soft);
   text-decoration: none;
   font-weight: 700;
+  padding: 0.45rem;
+}
+
+.entry-editor {
+  margin: 0 0 1rem;
+  padding: 0.85rem;
+  border-radius: 16px;
+  background: rgba(10, 14, 20, 0.96);
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 0.75rem;
+  animation: rise 220ms ease;
+}
+
+.entry-editor__head {
+  display: grid;
+  grid-template-columns: 52px 1fr auto;
+  gap: 0.7rem;
+  align-items: center;
+}
+
+.entry-editor__head h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  line-height: 1.2;
+}
+
+.entry-editor__head .muted {
+  margin: 0.15rem 0 0;
+}
+
+.entry-editor__thumb {
+  width: 52px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.entry-editor .qty-sheet {
+  position: static;
+  margin-top: 0;
+  box-shadow: none;
 }
 
 .empty {

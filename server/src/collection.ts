@@ -60,14 +60,36 @@ export function createCollectionStore() {
     card: GaCardEdition,
     quantity: number,
     finish: CardFinish = "normal",
-  ): CollectionEntry {
+  ): { entry: CollectionEntry; previousQuantity: number } {
     if (!Number.isInteger(quantity) || quantity < 1) {
       throw new Error("Quantity must be a positive integer");
     }
     const id = collectionEntryId(card.editionId, finish);
     const existing = entries.get(id);
-    const nextQty = (existing?.quantity ?? 0) + quantity;
-    return upsert(card, nextQty, finish);
+    const previousQuantity = existing?.quantity ?? 0;
+    const nextQty = previousQuantity + quantity;
+    return { entry: upsert(card, nextQty, finish), previousQuantity };
+  }
+
+  /**
+   * Update an existing line. Changing finish moves the stack to the new
+   * finish id (replacing any quantity already on that finish).
+   */
+  function update(
+    id: string,
+    card: GaCardEdition,
+    quantity: number,
+    finish: CardFinish,
+  ): CollectionEntry {
+    const existing = entries.get(id);
+    if (!existing && quantity > 0) {
+      // Allow create-via-update when card payload is present.
+      return upsert(card, quantity, finish);
+    }
+    if (existing && (existing.finish !== finish || existing.id !== collectionEntryId(card.editionId, finish))) {
+      entries.delete(id);
+    }
+    return upsert(card, quantity, finish);
   }
 
   function remove(id: string): boolean {
@@ -78,7 +100,7 @@ export function createCollectionStore() {
     return entries.get(id);
   }
 
-  return { summary, upsert, add, remove, get };
+  return { summary, upsert, add, update, remove, get };
 }
 
 export type CollectionStore = ReturnType<typeof createCollectionStore>;

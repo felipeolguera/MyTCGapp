@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { CollectionSummary } from "./types";
+import type { CardFinish, CollectionEntry, CollectionSummary } from "./types";
 import { finishLabel } from "./types";
 import {
   prepareExportArtifacts,
@@ -8,6 +8,7 @@ import {
   shareExportArtifacts,
   type ExportArtifacts,
 } from "./exportCollection";
+import { QuantityPad } from "./QuantityPad";
 import {
   finishToPrinting,
   formatUsd,
@@ -22,6 +23,13 @@ interface CollectionViewProps {
   onRefresh: () => void;
   onStatus?: (message: string | null) => void;
   onError?: (message: string | null) => void;
+  onUpdateEntry: (
+    id: string,
+    quantity: number,
+    finish: CardFinish,
+    card: CollectionEntry["card"],
+  ) => Promise<void>;
+  onDeleteEntry: (id: string) => Promise<void>;
 }
 
 export function CollectionView({
@@ -30,12 +38,18 @@ export function CollectionView({
   onRefresh,
   onStatus,
   onError,
+  onUpdateEntry,
+  onDeleteEntry,
 }: CollectionViewProps) {
   const [index, setIndex] = useState<PriceIndex | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportArtifacts, setExportArtifacts] = useState<ExportArtifacts | null>(
     null,
   );
+  const [editing, setEditing] = useState<CollectionEntry | null>(null);
+  const [editQty, setEditQty] = useState("1");
+  const [editFinish, setEditFinish] = useState<CardFinish>("normal");
+  const [savingEdit, setSavingEdit] = useState(false);
 
   useEffect(() => {
     void loadPriceIndex()
@@ -61,6 +75,55 @@ export function CollectionView({
 
   const totalValue = priced.reduce((sum, row) => sum + (row.line ?? 0), 0);
   const pricedCount = priced.filter((r) => r.line != null).length;
+
+  function openEditor(entry: CollectionEntry) {
+    setEditing(entry);
+    setEditQty(String(entry.quantity));
+    setEditFinish(entry.finish);
+    onError?.(null);
+  }
+
+  function closeEditor() {
+    setEditing(null);
+    setSavingEdit(false);
+  }
+
+  async function handleSaveEdit() {
+    if (!editing) return;
+    const qty = Number(editQty);
+    if (!Number.isInteger(qty) || qty < 1) {
+      onError?.("Enter a quantity from 1–999");
+      return;
+    }
+    setSavingEdit(true);
+    onError?.(null);
+    try {
+      await onUpdateEntry(editing.id, qty, editFinish, editing.card);
+      onStatus?.(
+        `Updated ${editing.card.name} · ${finishLabel(editFinish)} ×${qty}`,
+      );
+      closeEditor();
+    } catch (err) {
+      onError?.(err instanceof Error ? err.message : "Could not update card");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function handleDeleteEdit() {
+    if (!editing) return;
+    setSavingEdit(true);
+    onError?.(null);
+    try {
+      await onDeleteEntry(editing.id);
+      onStatus?.(`Removed ${editing.card.name} (${finishLabel(editing.finish)})`);
+      closeEditor();
+    } catch (err) {
+      onError?.(err instanceof Error ? err.message : "Could not delete card");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
 
   function closeExportPreview() {
     revokeExportArtifacts(exportArtifacts);
@@ -173,8 +236,8 @@ export function CollectionView({
       </header>
 
       <p className="collection-view__export-hint muted">
-        Export builds a checklist PNG + CSV. There is no PDF — use Share to send
-        the image, or Save image to Documents/ArchiveBinder.
+        Tap a card to edit quantity, switch Normal/Foil, or delete. Export builds
+        a checklist PNG + CSV under Documents/ArchiveBinder.
       </p>
 
       {exportArtifacts && (
@@ -226,52 +289,125 @@ export function CollectionView({
         </div>
       )}
 
+      {editing && (
+        <div className="entry-editor" role="dialog" aria-label="Edit collection card">
+          <div className="entry-editor__head">
+            <img
+              src={editing.card.imageUrl}
+              alt=""
+              className="entry-editor__thumb"
+            />
+            <div>
+              <h3>{editing.card.name}</h3>
+              <p className="muted">
+                {editing.card.setPrefix} #{editing.card.collectorNumber}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn btn--ghost btn--compact"
+              onClick={closeEditor}
+              disabled={savingEdit}
+            >
+              Cancel
+            </button>
+          </div>
+
+          <div
+            className="finish-toggle"
+            role="group"
+            aria-label="Card finish"
+          >
+            {(["normal", "foil"] as CardFinish[]).map((option) => (
+              <button
+                key={option}
+                type="button"
+                className={
+                  editFinish === option
+                    ? "finish-toggle__btn finish-toggle__btn--active"
+                    : "finish-toggle__btn"
+                }
+                onClick={() => setEditFinish(option)}
+                disabled={savingEdit}
+              >
+                {finishLabel(option)}
+              </button>
+            ))}
+          </div>
+
+          <QuantityPad
+            value={editQty}
+            onChange={setEditQty}
+            onSaveNext={() => void handleSaveEdit()}
+            saving={savingEdit}
+            saveLabel="Save"
+          />
+
+          <button
+            type="button"
+            className="btn btn--danger"
+            disabled={savingEdit}
+            onClick={() => void handleDeleteEdit()}
+          >
+            Delete from collection
+          </button>
+        </div>
+      )}
+
       <ul className="collection-list">
         {priced.map(({ entry, unit, line, url }) => (
           <li key={entry.id} className="collection-row">
-            <img
-              src={entry.card.imageUrl}
-              alt=""
-              className="collection-row__thumb"
-              loading="lazy"
-            />
-            <div className="collection-row__body">
-              <span className="collection-row__name">
-                {entry.card.name}
-                <span
-                  className={
-                    entry.finish === "foil"
-                      ? "finish-pill finish-pill--foil"
-                      : "finish-pill"
-                  }
-                >
-                  {finishLabel(entry.finish)}
+            <button
+              type="button"
+              className="collection-row__main"
+              onClick={() => openEditor(entry)}
+              aria-label={`Edit ${entry.card.name}`}
+            >
+              <img
+                src={entry.card.imageUrl}
+                alt=""
+                className="collection-row__thumb"
+                loading="lazy"
+              />
+              <div className="collection-row__body">
+                <span className="collection-row__name">
+                  {entry.card.name}
+                  <span
+                    className={
+                      entry.finish === "foil"
+                        ? "finish-pill finish-pill--foil"
+                        : "finish-pill"
+                    }
+                  >
+                    {finishLabel(entry.finish)}
+                  </span>
                 </span>
-              </span>
-              <span className="collection-row__set">
-                {entry.card.setPrefix} #{entry.card.collectorNumber}
-                {unit != null ? ` · ${formatUsd(unit)}` : ""}
-              </span>
-            </div>
-            <div className="collection-row__right">
-              <span className="collection-row__qty" aria-label="Quantity">
-                ×{entry.quantity}
-              </span>
-              {line != null && (
-                <span className="collection-row__line">{formatUsd(line)}</span>
-              )}
-              {url && (
-                <a
-                  className="collection-row__link"
-                  href={url}
-                  target="_blank"
-                  rel="noreferrer"
-                  aria-label={`TCGPlayer page for ${entry.card.name}`}
-                >
-                  $
-                </a>
-              )}
-            </div>
+                <span className="collection-row__set">
+                  {entry.card.setPrefix} #{entry.card.collectorNumber}
+                  {unit != null ? ` · ${formatUsd(unit)}` : ""}
+                </span>
+              </div>
+              <div className="collection-row__right">
+                <span className="collection-row__qty" aria-label="Quantity">
+                  ×{entry.quantity}
+                </span>
+                {line != null && (
+                  <span className="collection-row__line">{formatUsd(line)}</span>
+                )}
+              </div>
+            </button>
+            {url && (
+              <a
+                className="collection-row__link"
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={`TCGPlayer page for ${entry.card.name}`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                $
+              </a>
+            )}
           </li>
         ))}
       </ul>

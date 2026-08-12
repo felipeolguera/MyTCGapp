@@ -1,9 +1,8 @@
-import express, { type Request, type Response } from "express";
-import cors from "cors";
-import { createCollectionStore } from "./collection.js";
-import { searchGaCards } from "./gatcg.js";
 import type { CardFinish, GaCardEdition } from "./types.js";
-import { collectionEntryId } from "./types.js";
+import { searchGaCards } from "./gatcg.js";
+import { createCollectionStore } from "./collection.js";
+import cors from "cors";
+import express, { type Request, type Response } from "express";
 
 export function createApp(
   deps: {
@@ -73,8 +72,8 @@ export function createApp(
     }
 
     try {
-      const entry = collection.add(card, quantity, finish);
-      res.status(201).json({ entry, collection: collection.summary() });
+      const { entry, previousQuantity } = collection.add(card, quantity, finish);
+      res.status(201).json({ entry, previousQuantity, collection: collection.summary() });
     } catch (err) {
       res.status(400).json({
         error: err instanceof Error ? err.message : "Could not update collection",
@@ -82,7 +81,7 @@ export function createApp(
     }
   });
 
-  /** Set absolute quantity (0 removes). Path param is `${editionId}:${finish}`. */
+  /** Set absolute quantity (0 removes). Supports changing finish (moves the line). */
   app.put("/api/collection/:id", (req: Request, res: Response) => {
     const quantity = Number(req.body?.quantity);
     const card = req.body?.card as GaCardEdition | undefined;
@@ -100,14 +99,9 @@ export function createApp(
       res.status(400).json({ error: "card payload required when entry does not exist" });
       return;
     }
-    const expectedId = collectionEntryId(cardPayload.editionId, finish);
-    if (req.params.id.includes(":") && req.params.id !== expectedId) {
-      res.status(400).json({ error: "card/finish must match URL id" });
-      return;
-    }
 
     try {
-      const entry = collection.upsert(cardPayload, quantity, finish);
+      const entry = collection.update(req.params.id, cardPayload, quantity, finish);
       res.json({ entry, collection: collection.summary() });
     } catch (err) {
       res.status(400).json({

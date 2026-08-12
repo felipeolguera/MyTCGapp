@@ -117,6 +117,37 @@ describe("Grand Archive collection API", () => {
     expect(cleared.body.collection.uniqueCards).toBe(0);
   });
 
+  it("returns previousQuantity for undo support", async () => {
+    const app = createApp({ searchCards: vi.fn(async () => []) });
+    const first = await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 2 });
+    expect(first.body.previousQuantity).toBe(0);
+
+    const second = await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 3 });
+    expect(second.body.previousQuantity).toBe(2);
+    expect(second.body.entry.quantity).toBe(5);
+  });
+
+  it("moves an entry when finish changes on update", async () => {
+    const app = createApp({ searchCards: vi.fn(async () => []) });
+    const created = await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 4, finish: "normal" });
+    const id = created.body.entry.id as string;
+
+    const moved = await request(app)
+      .put(`/api/collection/${encodeURIComponent(id)}`)
+      .send({ quantity: 4, finish: "foil", card: sampleCard });
+    expect(moved.status).toBe(200);
+    expect(moved.body.entry.finish).toBe("foil");
+    expect(moved.body.entry.id).toBe(`${sampleCard.editionId}:foil`);
+    expect(moved.body.collection.uniqueCards).toBe(1);
+    expect(moved.body.collection.entries[0].finish).toBe("foil");
+  });
+
   it("deletes a collection entry", async () => {
     const app = createApp({ searchCards: vi.fn(async () => []) });
     const created = await request(app)
