@@ -10,6 +10,12 @@ const config: CapacitorConfig = {
   android: {
     allowMixedContent: false,
   },
+  plugins: {
+    // Native HTTP bypasses WebView CORS (TCGCSV / GATCG refresh & search).
+    CapacitorHttp: {
+      enabled: true,
+    },
+  },
 };
 
 export default config;
