@@ -1475,8 +1475,8 @@ export function CollectionView({
                   loading="lazy"
                 />
                 <div className="collection-row__body">
-                  <span className="collection-row__name">
-                    {entry.card.name}
+                  <span className="collection-row__title">{entry.card.name}</span>
+                  <span className="collection-row__pills">
                     <span
                       className={
                         entry.finish === "foil"
@@ -1491,7 +1491,7 @@ export function CollectionView({
                     )}
                     <span className="finish-pill">{entry.condition}</span>
                   </span>
-                  <span className="collection-row__set">
+                  <span className="collection-row__meta">
                     {entry.card.setPrefix} #{entry.card.collectorNumber}
                     {unit != null
                       ? ` · ${formatUsd(unit)}${
@@ -1514,18 +1514,6 @@ export function CollectionView({
                   )}
                 </div>
               </button>
-              {url && !selectMode && (
-                <a
-                  className="collection-row__link"
-                  href={url}
-                  target="_blank"
-                  rel="noreferrer"
-                  aria-label={`TCGPlayer page for ${entry.card.name}`}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  $
-                </a>
-              )}
               {!selectMode && (
                 <div className="collection-row__actions">
                   <button
@@ -1555,6 +1543,18 @@ export function CollectionView({
                   >
                     Sold −1
                   </button>
+                  {url ? (
+                    <a
+                      className="btn btn--ghost btn--compact collection-row__tcg"
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={`TCGPlayer page for ${entry.card.name}`}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      TCG
+                    </a>
+                  ) : null}
                 </div>
               )}
             </li>
