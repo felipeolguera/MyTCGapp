@@ -606,32 +606,26 @@ export function App() {
 
   return (
     <div className={tab === "collection" ? "app app--collection" : "app"}>
-      <header className={tab === "collection" ? "topbar topbar--compact" : "topbar"}>
-        <div className="topbar__brand">
-          <img
-            className="topbar__logo"
-            src="/icons/brand-mark.png"
-            alt=""
-            width={40}
-            height={40}
-          />
-          {tab === "collection" ? (
+      {tab === "collection" && (
+        <header className="topbar topbar--compact">
+          <div className="topbar__brand">
+            <img
+              className="topbar__logo"
+              src="/icons/brand-mark.png"
+              alt=""
+              width={40}
+              height={40}
+            />
             <h1 className="topbar__title-inline">Archive Binder</h1>
-          ) : (
-            <div>
-              <p className="brand">Archive Binder</p>
-              <h1>Grand Archive</h1>
-            </div>
-          )}
-        </div>
-        <div className="topbar__stats">
-          <span className="topbar__version" title="App version">
-            v{APP_VERSION}
-          </span>
-          <span>{collection?.totalCards ?? 0} owned</span>
-          {tab === "scan" && <span>{sessionAdds} this session</span>}
-        </div>
-      </header>
+          </div>
+          <div className="topbar__stats">
+            <span className="topbar__version" title="App version">
+              v{APP_VERSION}
+            </span>
+            <span>{collection?.totalCards ?? 0} owned</span>
+          </div>
+        </header>
+      )}
 
       {error && (
         <div className="banner banner--error" role="alert">
@@ -676,6 +670,7 @@ export function App() {
         {tab === "scan" && (
           <section className={confirming ? "scan scan--confirming" : "scan"}>
             {!confirming && (
+              <>
               <div className="scan__batch-bar">
                 <label
                   className="scan__batch-toggle"
@@ -758,6 +753,10 @@ export function App() {
                   </label>
                 )}
               </div>
+              <p className="scan__session muted">
+                v{APP_VERSION} · {sessionAdds} this session · {collection?.totalCards ?? 0} owned
+              </p>
+              </>
             )}
 
             <CameraCapture
