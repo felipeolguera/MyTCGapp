@@ -145,6 +145,13 @@ input {
   text-align: center;
 }
 
+.camera__tip {
+  margin: 0;
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+
 .btn {
   border: 0;
   border-radius: 999px;
@@ -426,6 +433,12 @@ input {
 .empty {
   padding: 2rem 0.5rem;
   text-align: center;
+}
+
+.ocr-hint {
+  margin: 0 0 0.65rem;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
 }
 
 .muted {

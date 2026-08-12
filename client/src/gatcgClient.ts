@@ -63,6 +63,20 @@ function normalizeEdition(card: RawCard, edition: RawEdition): GaCardEdition {
   };
 }
 
+function flattenCard(card: RawCard): GaCardEdition[] {
+  const editions = card.result_editions ?? card.editions ?? [];
+  return editions.map((edition) => normalizeEdition(card, edition));
+}
+
+async function fetchSearch(url: URL): Promise<GaCardEdition[]> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Grand Archive API error (${res.status})`);
+  }
+  const body = (await res.json()) as { data?: RawCard[] };
+  return (body.data ?? []).flatMap(flattenCard);
+}
+
 /** Search Grand Archive directly (used by the Android APK / standalone builds). */
 export async function searchGaCardsDirect(
   name: string,
@@ -74,15 +88,24 @@ export async function searchGaCardsDirect(
   const url = new URL(`${GATCG_BASE}/cards/search`);
   url.searchParams.set("name", query);
   url.searchParams.set("page_size", String(Math.min(Math.max(pageSize, 1), 50)));
+  return fetchSearch(url);
+}
 
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Grand Archive API error (${res.status})`);
-  }
-
-  const body = (await res.json()) as { data?: RawCard[] };
-  return (body.data ?? []).flatMap((card) => {
-    const editions = card.result_editions ?? card.editions ?? [];
-    return editions.map((edition) => normalizeEdition(card, edition));
-  });
+/** Exact-ish edition lookup via set prefix + collector number. */
+export async function searchGaCardsBySetCode(
+  prefix: string,
+  collectorNumber: string,
+): Promise<GaCardEdition[]> {
+  const url = new URL(`${GATCG_BASE}/cards/search`);
+  url.searchParams.append("prefix", prefix);
+  url.searchParams.set("collector_number", collectorNumber);
+  url.searchParams.set("page_size", "10");
+  const cards = await fetchSearch(url);
+  // API collector_number is exact, but still filter prefix defensively.
+  return cards.filter(
+    (c) =>
+      c.setPrefix.toUpperCase() === prefix.toUpperCase() &&
+      c.collectorNumber.replace(/^0+/, "") ===
+        collectorNumber.replace(/^0+/, ""),
+  );
 }

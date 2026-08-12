@@ -72,6 +72,15 @@ function flattenCard(card: RawCard): GaCardEdition[] {
   return editions.map((edition) => normalizeEdition(card, edition));
 }
 
+async function fetchSearch(url: URL): Promise<GaCardEdition[]> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Grand Archive API error (${res.status})`);
+  }
+  const body = (await res.json()) as SearchResponse;
+  return (body.data ?? []).flatMap(flattenCard);
+}
+
 export async function searchGaCards(
   name: string,
   pageSize = 10,
@@ -82,12 +91,22 @@ export async function searchGaCards(
   const url = new URL(`${GATCG_BASE}/cards/search`);
   url.searchParams.set("name", query);
   url.searchParams.set("page_size", String(Math.min(Math.max(pageSize, 1), 50)));
+  return fetchSearch(url);
+}
 
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Grand Archive API error (${res.status})`);
-  }
-
-  const body = (await res.json()) as SearchResponse;
-  return (body.data ?? []).flatMap(flattenCard);
+export async function searchGaCardsBySetCode(
+  prefix: string,
+  collectorNumber: string,
+): Promise<GaCardEdition[]> {
+  const url = new URL(`${GATCG_BASE}/cards/search`);
+  url.searchParams.append("prefix", prefix);
+  url.searchParams.set("collector_number", collectorNumber);
+  url.searchParams.set("page_size", "10");
+  const cards = await fetchSearch(url);
+  return cards.filter(
+    (c) =>
+      c.setPrefix.toUpperCase() === prefix.toUpperCase() &&
+      c.collectorNumber.replace(/^0+/, "") ===
+        collectorNumber.replace(/^0+/, ""),
+  );
 }
