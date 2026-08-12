@@ -1,10 +1,9 @@
 import type { PriceIndex, PriceRow } from "./prices";
 import { normalizeCollector, normalizeNameKey } from "./prices";
 import { writeCachedPriceIndex } from "./priceStore";
+import { fetchJsonBypassingCors, tcgcsvBaseUrl } from "./corsFetch";
 
 const CATEGORY_ID = 74;
-const BASE = `https://tcgcsv.com/tcgplayer/${CATEGORY_ID}`;
-const UA = "ArchiveBinder/1.0 (+https://github.com/felipeolguera/MyTCGapp)";
 const CONCURRENCY = 4;
 
 export type PriceRefreshProgress = {
@@ -34,14 +33,6 @@ type TcgPrice = {
   highPrice?: number | null;
   subTypeName?: string | null;
 };
-
-async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, {
-    headers: { Accept: "application/json", "User-Agent": UA },
-  });
-  if (!res.ok) throw new Error(`TCGCSV ${res.status} for ${url}`);
-  return res.json() as Promise<T>;
-}
 
 function extValue(
   extendedData: TcgProduct["extendedData"],
@@ -78,9 +69,10 @@ async function mapPool<T, R>(
 export async function refreshPriceIndexFromTcgcsv(
   onProgress?: (progress: PriceRefreshProgress) => void,
 ): Promise<PriceIndex> {
+  const base = `${tcgcsvBaseUrl()}/tcgplayer/${CATEGORY_ID}`;
   onProgress?.({ done: 0, total: 1, label: "Fetching sets…" });
-  const groupsBody = await fetchJson<{ results?: TcgGroup[] }>(
-    `${BASE}/groups`,
+  const groupsBody = await fetchJsonBypassingCors<{ results?: TcgGroup[] }>(
+    `${base}/groups`,
   );
   const groups = groupsBody.results ?? [];
   if (!groups.length) {
@@ -94,10 +86,12 @@ export async function refreshPriceIndexFromTcgcsv(
       label: group.abbreviation || group.name,
     });
     const [productsBody, pricesBody] = await Promise.all([
-      fetchJson<{ results?: TcgProduct[] }>(
-        `${BASE}/${group.groupId}/products`,
+      fetchJsonBypassingCors<{ results?: TcgProduct[] }>(
+        `${base}/${group.groupId}/products`,
       ),
-      fetchJson<{ results?: TcgPrice[] }>(`${BASE}/${group.groupId}/prices`),
+      fetchJsonBypassingCors<{ results?: TcgPrice[] }>(
+        `${base}/${group.groupId}/prices`,
+      ),
     ]);
     const products = productsBody.results ?? [];
     const prices = pricesBody.results ?? [];

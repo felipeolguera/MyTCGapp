@@ -18,6 +18,12 @@ export default defineConfig({
             target: API_TARGET,
             changeOrigin: true,
           },
+          // TCGCSV has no CORS headers — proxy for browser price refresh.
+          "/tcgcsv": {
+            target: "https://tcgcsv.com",
+            changeOrigin: true,
+            rewrite: (path) => path.replace(/^\/tcgcsv/, ""),
+          },
         },
   },
 });
