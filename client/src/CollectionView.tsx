@@ -286,6 +286,25 @@ export function CollectionView({
     onError?.(null);
   }
 
+  useEffect(() => {
+    if (!editing || selectMode) return;
+    const frame = window.requestAnimationFrame(() => {
+      const scroller = document.querySelector(".main__scroll");
+      const editor = document.querySelector(".entry-editor");
+      if (scroller instanceof HTMLElement && editor instanceof HTMLElement) {
+        const scrollerTop = scroller.getBoundingClientRect().top;
+        const editorTop = editor.getBoundingClientRect().top;
+        scroller.scrollTo({
+          top: scroller.scrollTop + (editorTop - scrollerTop) - 8,
+          behavior: "smooth",
+        });
+      } else if (scroller instanceof HTMLElement) {
+        scroller.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [editing, selectMode]);
+
   function closeEditor() {
     setEditing(null);
     setSavingEdit(false);
