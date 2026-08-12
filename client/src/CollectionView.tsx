@@ -2,6 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import type { CardFinish, CollectionEntry, CollectionSummary } from "./types";
 import { finishLabel } from "./types";
 import {
+  filterAndSortCollectionRows,
+  type CollectionFinishFilter,
+  type CollectionSort,
+} from "./collectionQuery";
+import {
   prepareExportArtifacts,
   revokeExportArtifacts,
   saveExportImage,
@@ -50,6 +55,10 @@ export function CollectionView({
   const [editQty, setEditQty] = useState("1");
   const [editFinish, setEditFinish] = useState<CardFinish>("normal");
   const [savingEdit, setSavingEdit] = useState(false);
+  const [query, setQuery] = useState("");
+  const [finishFilter, setFinishFilter] =
+    useState<CollectionFinishFilter>("all");
+  const [sort, setSort] = useState<CollectionSort>("name");
 
   useEffect(() => {
     void loadPriceIndex()
@@ -73,8 +82,22 @@ export function CollectionView({
     });
   }, [collection, index]);
 
+  const visible = useMemo(
+    () =>
+      filterAndSortCollectionRows(priced, {
+        query,
+        finish: finishFilter,
+        sort,
+      }),
+    [priced, query, finishFilter, sort],
+  );
+
   const totalValue = priced.reduce((sum, row) => sum + (row.line ?? 0), 0);
   const pricedCount = priced.filter((r) => r.line != null).length;
+  const visibleCards = visible.reduce((sum, row) => sum + row.entry.quantity, 0);
+  const visibleValue = visible.reduce((sum, row) => sum + (row.line ?? 0), 0);
+  const filtered =
+    query.trim() !== "" || finishFilter !== "all" || sort !== "name";
 
   function openEditor(entry: CollectionEntry) {
     setEditing(entry);
@@ -131,20 +154,24 @@ export function CollectionView({
   }
 
   async function handleExport() {
-    if (!collection || priced.length === 0 || exporting) return;
+    if (!collection || visible.length === 0 || exporting) return;
     setExporting(true);
     onStatus?.(null);
     onError?.(null);
     try {
-      const artifacts = await prepareExportArtifacts(priced, {
-        cards: collection.totalCards,
-        unique: collection.uniqueCards,
-        market: totalValue,
-        priced: pricedCount,
+      const artifacts = await prepareExportArtifacts(visible, {
+        cards: visibleCards,
+        unique: visible.length,
+        market: visibleValue,
+        priced: visible.filter((r) => r.line != null).length,
       });
       revokeExportArtifacts(exportArtifacts);
       setExportArtifacts(artifacts);
-      onStatus?.("Export ready — preview below, then Share or Save image");
+      onStatus?.(
+        filtered
+          ? `Export ready for ${visible.length} filtered lines`
+          : "Export ready — preview below, then Share or Save image",
+      );
     } catch (err) {
       onError?.(
         err instanceof Error ? err.message : "Could not export collection",
@@ -219,15 +246,21 @@ export function CollectionView({
               ? ` · ~${formatUsd(totalValue)} market (${pricedCount}/${collection.uniqueCards} priced)`
               : ""}
           </p>
+          {filtered && (
+            <p className="muted collection-view__filter-meta">
+              Showing {visibleCards} cards · {visible.length} lines
+              {index ? ` · ~${formatUsd(visibleValue)}` : ""}
+            </p>
+          )}
         </div>
         <div className="collection-view__actions">
           <button
             type="button"
             className="btn btn--primary btn--compact"
             onClick={() => void handleExport()}
-            disabled={exporting}
+            disabled={exporting || visible.length === 0}
           >
-            {exporting ? "Preparing…" : "Export"}
+            {exporting ? "Preparing…" : filtered ? "Export view" : "Export"}
           </button>
           <button type="button" className="btn btn--ghost btn--compact" onClick={onRefresh}>
             Refresh
@@ -235,9 +268,50 @@ export function CollectionView({
         </div>
       </header>
 
+      <div className="collection-toolbar">
+        <label className="collection-toolbar__search" htmlFor="collection-query">
+          <span className="sr-only">Search collection</span>
+          <input
+            id="collection-query"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search name, set, or #"
+            autoComplete="off"
+            enterKeyHint="search"
+          />
+        </label>
+        <div className="collection-toolbar__row">
+          <label className="collection-toolbar__field">
+            <span>Finish</span>
+            <select
+              value={finishFilter}
+              onChange={(e) =>
+                setFinishFilter(e.target.value as CollectionFinishFilter)
+              }
+            >
+              <option value="all">All</option>
+              <option value="normal">Normal</option>
+              <option value="foil">Foil</option>
+            </select>
+          </label>
+          <label className="collection-toolbar__field">
+            <span>Sort</span>
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as CollectionSort)}
+            >
+              <option value="name">Name</option>
+              <option value="set">Set</option>
+              <option value="price-desc">Price high → low</option>
+              <option value="price-asc">Price low → high</option>
+              <option value="qty-desc">Qty high → low</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
       <p className="collection-view__export-hint muted">
-        Tap a card to edit quantity, switch Normal/Foil, or delete. Export builds
-        a checklist PNG + CSV under Documents/ArchiveBinder.
+        Tap a card to edit. Export uses the current search/filter view.
       </p>
 
       {exportArtifacts && (
@@ -355,7 +429,7 @@ export function CollectionView({
       )}
 
       <ul className="collection-list">
-        {priced.map(({ entry, unit, line, url }) => (
+        {visible.map(({ entry, unit, line, url }) => (
           <li key={entry.id} className="collection-row">
             <button
               type="button"
@@ -411,6 +485,12 @@ export function CollectionView({
           </li>
         ))}
       </ul>
+
+      {visible.length === 0 && (
+        <p className="muted collection-view__empty-filter">
+          No cards match this search/filter.
+        </p>
+      )}
     </section>
   );
 }

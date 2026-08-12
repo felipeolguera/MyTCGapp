@@ -543,6 +543,71 @@ input {
   font-size: 0.82rem;
 }
 
+.collection-view__filter-meta {
+  margin: 0.2rem 0 0;
+  font-size: 0.8rem;
+}
+
+.collection-view__empty-filter {
+  margin: 0.75rem 0 0;
+  text-align: center;
+}
+
+.collection-toolbar {
+  display: grid;
+  gap: 0.55rem;
+  margin-bottom: 0.65rem;
+}
+
+.collection-toolbar__search input,
+.collection-toolbar__field select {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 12px;
+  padding: 0.7rem 0.85rem;
+  color: var(--text);
+}
+
+.collection-toolbar__search input::placeholder {
+  color: rgba(154, 166, 181, 0.7);
+}
+
+.collection-toolbar__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.collection-toolbar__field {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+  font-weight: 700;
+}
+
+.collection-toolbar__field select {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .export-preview {
   margin: 0 0 1rem;
   padding: 0.85rem;
