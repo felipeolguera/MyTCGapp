@@ -444,6 +444,7 @@ export function App() {
       )}
 
       <main className="main">
+        <div className="main__scroll">
         {tab === "scan" && (
           <section className={confirming ? "scan scan--confirming" : "scan"}>
             {!confirming && (
@@ -651,6 +652,7 @@ export function App() {
             onBulkSetForSale={handleBulkSetForSale}
           />
         )}
+        </div>
       </main>
 
       <nav className="tabbar" aria-label="Primary">
