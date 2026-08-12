@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import {
   addLocalCollection,
+  bulkRemoveLocal,
   getLocalCollection,
   removeLocalCollection,
   updateLocalCollection,
@@ -104,5 +105,21 @@ describe("localCollection edit/undo helpers", () => {
     expect(updated.entry.forSale).toBe(true);
     expect(updated.entry.condition).toBe("LP");
     expect(updated.entry.askingPrice).toBe(12.5);
+  });
+
+  it("stores a note and bulk-removes lines", () => {
+    const a = addLocalCollection(card, 1, "normal");
+    const b = addLocalCollection(card, 2, "foil");
+    updateLocalCollection(a.entry.id, {
+      quantity: 1,
+      finish: "normal",
+      card,
+      note: "Trade bait",
+    });
+    expect(getLocalCollection().entries.find((e) => e.id === a.entry.id)?.note).toBe(
+      "Trade bait",
+    );
+    const next = bulkRemoveLocal([a.entry.id, b.entry.id]);
+    expect(next.totalCards).toBe(0);
   });
 });

@@ -22,6 +22,7 @@ export interface CollectionEntryPatch {
   forSale?: boolean;
   condition?: CardCondition;
   askingPrice?: number | null;
+  note?: string;
 }
 
 function normalizeEntry(raw: Partial<CollectionEntry> & {
@@ -44,13 +45,29 @@ function normalizeEntry(raw: Partial<CollectionEntry> & {
     forSale: Boolean(raw.forSale),
     condition: normalizeCondition(raw.condition),
     askingPrice: normalizeAskingPrice(raw.askingPrice),
+    note: typeof raw.note === "string" ? raw.note.slice(0, 280) : "",
   };
+}
+
+function writeEntries(entries: CollectionEntry[]) {
+  const json = JSON.stringify(entries);
+  const tmpKey = `${STORAGE_KEY}.tmp`;
+  // Two-phase write so a crash mid-save is less likely to wipe the binder.
+  localStorage.setItem(tmpKey, json);
+  localStorage.setItem(STORAGE_KEY, json);
+  localStorage.removeItem(tmpKey);
 }
 
 function readEntries(): CollectionEntry[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw =
+      localStorage.getItem(STORAGE_KEY) ??
+      localStorage.getItem(`${STORAGE_KEY}.tmp`);
     if (raw) {
+      if (!localStorage.getItem(STORAGE_KEY) && localStorage.getItem(`${STORAGE_KEY}.tmp`)) {
+        localStorage.setItem(STORAGE_KEY, raw);
+        localStorage.removeItem(`${STORAGE_KEY}.tmp`);
+      }
       const parsed = JSON.parse(raw) as unknown[];
       if (!Array.isArray(parsed)) return [];
       return parsed
@@ -94,10 +111,6 @@ function readEntries(): CollectionEntry[] {
   }
 }
 
-function writeEntries(entries: CollectionEntry[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
-}
-
 function summarize(entries: CollectionEntry[]): CollectionSummary {
   const sorted = [...entries].sort((a, b) => {
     const name = a.card.name.localeCompare(b.card.name);
@@ -114,11 +127,12 @@ function summarize(entries: CollectionEntry[]): CollectionSummary {
 
 function defaultsFrom(
   existing?: CollectionEntry,
-): Pick<CollectionEntry, "forSale" | "condition" | "askingPrice"> {
+): Pick<CollectionEntry, "forSale" | "condition" | "askingPrice" | "note"> {
   return {
     forSale: existing?.forSale ?? false,
     condition: existing?.condition ?? "NM",
     askingPrice: existing?.askingPrice ?? null,
+    note: existing?.note ?? "",
   };
 }
 
@@ -197,6 +211,10 @@ export function updateLocalCollection(
         : normalizeAskingPrice(
             existing?.askingPrice ?? targetExisting?.askingPrice,
           ),
+    note:
+      patch.note !== undefined
+        ? patch.note.slice(0, 280)
+        : (existing?.note ?? targetExisting?.note ?? ""),
   };
 
   if (quantity === 0) {
@@ -262,4 +280,16 @@ export function bulkSetForSaleLocal(
   );
   writeEntries(next);
   return summarize(next);
+}
+
+/** Delete many lines at once. */
+export function bulkRemoveLocal(ids: string[]): CollectionSummary {
+  const idSet = new Set(ids);
+  const next = readEntries().filter((entry) => !idSet.has(entry.id));
+  writeEntries(next);
+  return summarize(next);
+}
+
+export function findLocalEntry(id: string): CollectionEntry | undefined {
+  return readEntries().find((e) => e.id === id);
 }

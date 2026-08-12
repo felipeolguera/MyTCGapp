@@ -45,6 +45,7 @@ export interface CollectionEntry {
   forSale: boolean;
   condition: CardCondition;
   askingPrice: number | null;
+  note: string;
 }
 
 export interface CollectionSummary {

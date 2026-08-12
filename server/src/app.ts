@@ -120,6 +120,16 @@ export function createApp(
     res.json({ collection: next });
   });
 
+  app.post("/api/collection/bulk-delete", (req: Request, res: Response) => {
+    const ids = req.body?.ids;
+    if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) {
+      res.status(400).json({ error: "Body must include ids: string[]" });
+      return;
+    }
+    const next = collection.bulkRemove(ids);
+    res.json({ collection: next });
+  });
+
   app.put("/api/collection/:id", (req: Request, res: Response) => {
     const quantity = Number(req.body?.quantity);
     const card = req.body?.card as GaCardEdition | undefined;
@@ -136,6 +146,10 @@ export function createApp(
       req.body?.askingPrice === undefined
         ? undefined
         : normalizeAskingPrice(req.body.askingPrice);
+    const note =
+      req.body?.note === undefined
+        ? undefined
+        : String(req.body.note).slice(0, 280);
 
     if (!Number.isInteger(quantity) || quantity < 0 || quantity > 999) {
       res
@@ -160,6 +174,7 @@ export function createApp(
         forSale,
         condition,
         askingPrice,
+        note,
       });
       res.json({ entry, collection: collection.summary() });
     } catch (err) {

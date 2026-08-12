@@ -18,6 +18,11 @@ export interface CollectionEntryPatch {
   forSale?: boolean;
   condition?: CardCondition;
   askingPrice?: number | null;
+  note?: string;
+}
+
+function normalizeNote(raw: unknown): string {
+  return typeof raw === "string" ? raw.slice(0, 280) : "";
 }
 
 export function createCollectionStore() {
@@ -42,7 +47,7 @@ export function createCollectionStore() {
     quantity: number,
     finish: CardFinish = "normal",
     meta?: Partial<
-      Pick<CollectionEntry, "forSale" | "condition" | "askingPrice">
+      Pick<CollectionEntry, "forSale" | "condition" | "askingPrice" | "note">
     >,
   ): CollectionEntry {
     if (!Number.isInteger(quantity) || quantity < 0) {
@@ -67,6 +72,9 @@ export function createCollectionStore() {
             ? meta.askingPrice
             : existing?.askingPrice,
         ),
+        note: normalizeNote(
+          meta?.note !== undefined ? meta.note : existing?.note,
+        ),
       };
     }
 
@@ -83,6 +91,9 @@ export function createCollectionStore() {
         meta?.askingPrice !== undefined
           ? meta.askingPrice
           : existing?.askingPrice,
+      ),
+      note: normalizeNote(
+        meta?.note !== undefined ? meta.note : existing?.note,
       ),
     };
     entries.set(id, entry);
@@ -106,6 +117,7 @@ export function createCollectionStore() {
         forSale: existing?.forSale,
         condition: existing?.condition,
         askingPrice: existing?.askingPrice,
+        note: existing?.note,
       }),
       previousQuantity,
     };
@@ -131,6 +143,7 @@ export function createCollectionStore() {
         patch.askingPrice !== undefined
           ? patch.askingPrice
           : existing?.askingPrice,
+      note: patch.note !== undefined ? patch.note : existing?.note,
     });
   }
 
@@ -150,6 +163,7 @@ export function createCollectionStore() {
         forSale: Boolean(row.forSale),
         condition: normalizeCondition(row.condition),
         askingPrice: normalizeAskingPrice(row.askingPrice),
+        note: normalizeNote(row.note),
       });
     }
     return summary();
@@ -165,7 +179,22 @@ export function createCollectionStore() {
     return summary();
   }
 
-  return { summary, upsert, add, update, remove, get, replaceAll, bulkSetForSale };
+  function bulkRemove(ids: string[]): CollectionSummary {
+    for (const id of ids) entries.delete(id);
+    return summary();
+  }
+
+  return {
+    summary,
+    upsert,
+    add,
+    update,
+    remove,
+    get,
+    replaceAll,
+    bulkSetForSale,
+    bulkRemove,
+  };
 }
 
 export type CollectionStore = ReturnType<typeof createCollectionStore>;

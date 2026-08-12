@@ -214,6 +214,37 @@ describe("Grand Archive collection API", () => {
     expect(bulk.body.collection.entries[0].forSale).toBe(true);
   });
 
+  it("bulk deletes lines", async () => {
+    const app = createApp({ searchCards: vi.fn(async () => []) });
+    const created = await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 2 });
+    const id = created.body.entry.id as string;
+    const bulk = await request(app)
+      .post("/api/collection/bulk-delete")
+      .send({ ids: [id] });
+    expect(bulk.status).toBe(200);
+    expect(bulk.body.collection.totalCards).toBe(0);
+  });
+
+  it("stores a note on an entry", async () => {
+    const app = createApp({ searchCards: vi.fn(async () => []) });
+    const created = await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 1 });
+    const id = created.body.entry.id as string;
+    const updated = await request(app)
+      .put(`/api/collection/${encodeURIComponent(id)}`)
+      .send({
+        quantity: 1,
+        finish: "normal",
+        card: sampleCard,
+        note: "Want NM only",
+      });
+    expect(updated.status).toBe(200);
+    expect(updated.body.entry.note).toBe("Want NM only");
+  });
+
   it("deletes a collection entry", async () => {
     const app = createApp({ searchCards: vi.fn(async () => []) });
     const created = await request(app)

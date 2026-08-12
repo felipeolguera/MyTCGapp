@@ -7,6 +7,8 @@ interface ScanConfirmSheetProps {
   quantity: string;
   finish: CardFinish;
   matchScore?: number;
+  /** Existing owned qty for this card+finish (0 if new). */
+  ownedQuantity?: number;
   onQuantityChange: (value: string) => void;
   onFinishChange: (finish: CardFinish) => void;
   onSaveNext: () => void;
@@ -20,6 +22,7 @@ export function ScanConfirmSheet({
   quantity,
   finish,
   matchScore,
+  ownedQuantity = 0,
   onQuantityChange,
   onFinishChange,
   onSaveNext,
@@ -36,6 +39,9 @@ export function ScanConfirmSheet({
             {card.setPrefix} #{card.collectorNumber}
             {matchScore != null ? ` · ${Math.round(matchScore * 100)}%` : ""}
           </p>
+          {ownedQuantity > 0 ? (
+            <p className="scan-confirm__owned">Already own ×{ownedQuantity}</p>
+          ) : null}
         </div>
         <button
           type="button"

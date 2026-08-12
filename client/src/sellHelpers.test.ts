@@ -46,6 +46,7 @@ function row(
       forSale: true,
       condition: "NM",
       askingPrice: asking,
+      note: "",
     },
     unit,
     line: (asking ?? unit) != null ? (asking ?? unit)! * qty : null,

@@ -2,6 +2,7 @@ import type { CollectionEntry, CollectionSummary } from "./types";
 import { Capacitor } from "@capacitor/core";
 import { Directory, Filesystem } from "@capacitor/filesystem";
 import { Share } from "@capacitor/share";
+import { markBackupCompleted } from "./backupMeta";
 import { APP_VERSION } from "./version";
 
 export interface CollectionBackup {
@@ -94,10 +95,12 @@ export async function shareCollectionBackup(
         throw new DOMException("Share cancelled", "AbortError");
       }
     }
+    markBackupCompleted();
     return `Documents/ArchiveBinder/${filename}`;
   }
 
   downloadBlob(blob, filename);
+  markBackupCompleted();
   return filename;
 }
 

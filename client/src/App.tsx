@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   addToCollection,
+  bulkRemoveFromCollection,
   bulkSetForSale,
   fetchCollection,
   removeFromCollection,
@@ -21,7 +22,7 @@ import type {
   ScanPhase,
   TabId,
 } from "./types";
-import { finishLabel } from "./types";
+import { collectionEntryId, finishLabel } from "./types";
 import { APP_VERSION } from "./version";
 
 interface LastAdd {
@@ -274,6 +275,7 @@ export function App() {
       forSale?: boolean;
       condition?: CardCondition;
       askingPrice?: number | null;
+      note?: string;
     },
   ) {
     const { collection: next } = await updateCollectionEntry(id, patch);
@@ -283,6 +285,12 @@ export function App() {
 
   async function handleDeleteEntry(id: string) {
     const { collection: next } = await removeFromCollection(id);
+    setCollection(next);
+    setLastAdd(null);
+  }
+
+  async function handleBulkDelete(ids: string[]) {
+    const next = await bulkRemoveFromCollection(ids);
     setCollection(next);
     setLastAdd(null);
   }
@@ -383,6 +391,12 @@ export function App() {
                 quantity={quantity}
                 finish={finish}
                 matchScore={matchScores[selected.editionId]}
+                ownedQuantity={
+                  collection?.entries.find(
+                    (e) =>
+                      e.id === collectionEntryId(selected.editionId, finish),
+                  )?.quantity ?? 0
+                }
                 onQuantityChange={setQuantity}
                 onFinishChange={setFinish}
                 onSaveNext={() => void handleSaveNext()}
@@ -500,6 +514,7 @@ export function App() {
             onError={setError}
             onUpdateEntry={handleUpdateEntry}
             onDeleteEntry={handleDeleteEntry}
+            onBulkDelete={handleBulkDelete}
             onRestore={handleRestoreCollection}
             onBulkSetForSale={handleBulkSetForSale}
           />

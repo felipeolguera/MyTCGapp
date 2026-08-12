@@ -58,6 +58,7 @@ function row(
       forSale: false,
       condition: "NM",
       askingPrice: null,
+      note: "",
     },
     unit,
     line: unit == null ? null : unit * quantity,

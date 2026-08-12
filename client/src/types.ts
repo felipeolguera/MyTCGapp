@@ -49,6 +49,8 @@ export interface CollectionEntry {
   condition: CardCondition;
   /** Optional asking unit price override (USD). */
   askingPrice: number | null;
+  /** Freeform buyer/seller note. */
+  note: string;
 }
 
 export interface CollectionSummary {

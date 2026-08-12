@@ -18,6 +18,12 @@ import {
   shareCollectionBackup,
 } from "./collectionBackup";
 import {
+  backupReminderMessage,
+  formatBackupAge,
+  readBackupMeta,
+  type BackupMeta,
+} from "./backupMeta";
+import {
   prepareExportArtifacts,
   revokeExportArtifacts,
   saveExportImage,
@@ -53,9 +59,11 @@ interface CollectionViewProps {
       forSale?: boolean;
       condition?: CardCondition;
       askingPrice?: number | null;
+      note?: string;
     },
   ) => Promise<void>;
   onDeleteEntry: (id: string) => Promise<void>;
+  onBulkDelete: (ids: string[]) => Promise<void>;
   onRestore: (entries: CollectionEntry[]) => Promise<void>;
   onBulkSetForSale: (ids: string[], forSale: boolean) => Promise<void>;
 }
@@ -68,6 +76,7 @@ export function CollectionView({
   onError,
   onUpdateEntry,
   onDeleteEntry,
+  onBulkDelete,
   onRestore,
   onBulkSetForSale,
 }: CollectionViewProps) {
@@ -82,6 +91,7 @@ export function CollectionView({
   const [editForSale, setEditForSale] = useState(false);
   const [editCondition, setEditCondition] = useState<CardCondition>("NM");
   const [editAsking, setEditAsking] = useState("");
+  const [editNote, setEditNote] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [query, setQuery] = useState("");
   const [finishFilter, setFinishFilter] =
@@ -89,6 +99,11 @@ export function CollectionView({
   const [saleFilter, setSaleFilter] = useState<CollectionSaleFilter>("all");
   const [sort, setSort] = useState<CollectionSort>("name");
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [backupMeta, setBackupMeta] = useState<BackupMeta>(() =>
+    readBackupMeta(),
+  );
 
   useEffect(() => {
     void loadPriceIndex()
@@ -134,20 +149,45 @@ export function CollectionView({
     finishFilter !== "all" ||
     saleFilter !== "all" ||
     sort !== "name";
+  const backupReminder = backupReminderMessage(backupMeta);
+  const selectedCount = selectedIds.size;
 
   function openEditor(entry: CollectionEntry) {
+    if (selectMode) {
+      toggleSelected(entry.id);
+      return;
+    }
     setEditing(entry);
     setEditQty(String(entry.quantity));
     setEditFinish(entry.finish);
     setEditForSale(entry.forSale);
     setEditCondition(entry.condition);
     setEditAsking(entry.askingPrice != null ? String(entry.askingPrice) : "");
+    setEditNote(entry.note ?? "");
     onError?.(null);
   }
 
   function closeEditor() {
     setEditing(null);
     setSavingEdit(false);
+  }
+
+  function exitSelectMode() {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectAllVisible() {
+    setSelectedIds(new Set(visible.map((r) => r.entry.id)));
   }
 
   async function handleSaveEdit() {
@@ -173,6 +213,7 @@ export function CollectionView({
         forSale: editForSale,
         condition: editCondition,
         askingPrice: asking,
+        note: editNote.trim().slice(0, 280),
       });
       onStatus?.(
         `Updated ${editing.card.name} · ${finishLabel(editFinish)} ×${qty}`,
@@ -197,6 +238,29 @@ export function CollectionView({
       onError?.(err instanceof Error ? err.message : "Could not delete card");
     } finally {
       setSavingEdit(false);
+    }
+  }
+
+  async function handleBulkDeleteSelected() {
+    if (selectedCount === 0 || bulkBusy) return;
+    const ok = window.confirm(
+      `Delete ${selectedCount} selected line${selectedCount === 1 ? "" : "s"}?`,
+    );
+    if (!ok) return;
+    setBulkBusy(true);
+    onError?.(null);
+    try {
+      await onBulkDelete([...selectedIds]);
+      onStatus?.(
+        `Deleted ${selectedCount} line${selectedCount === 1 ? "" : "s"}`,
+      );
+      exitSelectMode();
+    } catch (err) {
+      onError?.(
+        err instanceof Error ? err.message : "Could not delete selected cards",
+      );
+    } finally {
+      setBulkBusy(false);
     }
   }
 
@@ -332,6 +396,7 @@ export function CollectionView({
     onError?.(null);
     try {
       const path = await shareCollectionBackup(collection);
+      setBackupMeta(readBackupMeta());
       onStatus?.(`Backup ready · ${path}`);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
@@ -397,6 +462,9 @@ export function CollectionView({
               ? ` · ~${formatUsd(totalValue)} (${pricedCount}/${collection.uniqueCards} priced)`
               : ""}
           </p>
+          <p className="muted collection-view__backup-meta">
+            {formatBackupAge(backupMeta)}
+          </p>
           {filtered && (
             <p className="muted collection-view__filter-meta">
               Showing {visibleCards} cards · {visible.length} lines
@@ -409,7 +477,7 @@ export function CollectionView({
             type="button"
             className="btn btn--primary btn--compact"
             onClick={() => void handleExport(false)}
-            disabled={exporting || visible.length === 0}
+            disabled={exporting || visible.length === 0 || selectMode}
           >
             {exporting ? "Preparing…" : filtered ? "Export view" : "Export"}
           </button>
@@ -428,8 +496,56 @@ export function CollectionView({
           >
             Restore
           </button>
+          <button
+            type="button"
+            className="btn btn--ghost btn--compact"
+            onClick={() => {
+              if (selectMode) exitSelectMode();
+              else {
+                closeEditor();
+                setSelectMode(true);
+              }
+            }}
+          >
+            {selectMode ? "Cancel select" : "Select"}
+          </button>
         </div>
       </header>
+
+      {backupReminder && (
+        <p
+          className="banner banner--warn collection-view__backup-reminder"
+          role="status"
+        >
+          {backupReminder}
+        </p>
+      )}
+
+      {selectMode && (
+        <div className="select-toolbar">
+          <span className="select-toolbar__count">
+            {selectedCount} selected
+          </span>
+          <div className="select-toolbar__actions">
+            <button
+              type="button"
+              className="btn btn--ghost btn--compact"
+              onClick={selectAllVisible}
+              disabled={visible.length === 0}
+            >
+              Select all
+            </button>
+            <button
+              type="button"
+              className="btn btn--danger btn--compact"
+              onClick={() => void handleBulkDeleteSelected()}
+              disabled={selectedCount === 0 || bulkBusy}
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="sell-toolbar">
         <div className="sell-toolbar__total">
@@ -441,7 +557,7 @@ export function CollectionView({
             type="button"
             className="btn btn--ghost btn--compact"
             onClick={() => void handleCopyAskingTotal()}
-            disabled={visible.length === 0}
+            disabled={visible.length === 0 || selectMode}
           >
             Copy total
           </button>
@@ -449,7 +565,7 @@ export function CollectionView({
             type="button"
             className="btn btn--ghost btn--compact"
             onClick={() => void handleBulkForSale(true)}
-            disabled={visible.length === 0 || bulkBusy}
+            disabled={visible.length === 0 || bulkBusy || selectMode}
           >
             Mark for sale
           </button>
@@ -457,7 +573,7 @@ export function CollectionView({
             type="button"
             className="btn btn--ghost btn--compact"
             onClick={() => void handleBulkForSale(false)}
-            disabled={visible.length === 0 || bulkBusy}
+            disabled={visible.length === 0 || bulkBusy || selectMode}
           >
             Clear sale
           </button>
@@ -465,7 +581,7 @@ export function CollectionView({
             type="button"
             className="btn btn--primary btn--compact"
             onClick={() => void handleExport(true)}
-            disabled={exporting || visible.length === 0}
+            disabled={exporting || visible.length === 0 || selectMode}
           >
             Sell sheet
           </button>
@@ -574,7 +690,7 @@ export function CollectionView({
         </div>
       )}
 
-      {editing && (
+      {editing && !selectMode && (
         <div className="entry-editor" role="dialog" aria-label="Edit collection card">
           <div className="entry-editor__head">
             <img
@@ -658,6 +774,18 @@ export function CollectionView({
             </label>
           </div>
 
+          <label className="entry-editor__note">
+            <span>Note</span>
+            <textarea
+              value={editNote}
+              onChange={(e) => setEditNote(e.target.value.slice(0, 280))}
+              placeholder="Buyer note, trade interest…"
+              rows={2}
+              maxLength={280}
+              disabled={savingEdit}
+            />
+          </label>
+
           <QuantityPad
             value={editQty}
             onChange={setEditQty}
@@ -678,71 +806,99 @@ export function CollectionView({
       )}
 
       <ul className="collection-list">
-        {visible.map(({ entry, unit, line, url, market }) => (
-          <li key={entry.id} className="collection-row">
-            <button
-              type="button"
-              className="collection-row__main"
-              onClick={() => openEditor(entry)}
-              aria-label={`Edit ${entry.card.name}`}
+        {visible.map(({ entry, unit, line, url, market }) => {
+          const selected = selectedIds.has(entry.id);
+          return (
+            <li
+              key={entry.id}
+              className={
+                selected
+                  ? "collection-row collection-row--selected"
+                  : "collection-row"
+              }
             >
-              <img
-                src={entry.card.imageUrl}
-                alt=""
-                className="collection-row__thumb"
-                loading="lazy"
-              />
-              <div className="collection-row__body">
-                <span className="collection-row__name">
-                  {entry.card.name}
+              <button
+                type="button"
+                className="collection-row__main"
+                onClick={() => openEditor(entry)}
+                aria-label={
+                  selectMode
+                    ? `${selected ? "Deselect" : "Select"} ${entry.card.name}`
+                    : `Edit ${entry.card.name}`
+                }
+                aria-pressed={selectMode ? selected : undefined}
+              >
+                {selectMode && (
                   <span
                     className={
-                      entry.finish === "foil"
-                        ? "finish-pill finish-pill--foil"
-                        : "finish-pill"
+                      selected
+                        ? "collection-row__check collection-row__check--on"
+                        : "collection-row__check"
                     }
-                  >
-                    {finishLabel(entry.finish)}
-                  </span>
-                  {entry.forSale && (
-                    <span className="finish-pill finish-pill--sale">Sale</span>
-                  )}
-                  <span className="finish-pill">{entry.condition}</span>
-                </span>
-                <span className="collection-row__set">
-                  {entry.card.setPrefix} #{entry.card.collectorNumber}
-                  {unit != null
-                    ? ` · ${formatUsd(unit)}${
-                        entry.askingPrice != null && market != null
-                          ? ` ask (mkt ${formatUsd(market)})`
-                          : ""
-                      }`
-                    : ""}
-                </span>
-              </div>
-              <div className="collection-row__right">
-                <span className="collection-row__qty" aria-label="Quantity">
-                  ×{entry.quantity}
-                </span>
-                {line != null && (
-                  <span className="collection-row__line">{formatUsd(line)}</span>
+                    aria-hidden
+                  />
                 )}
-              </div>
-            </button>
-            {url && (
-              <a
-                className="collection-row__link"
-                href={url}
-                target="_blank"
-                rel="noreferrer"
-                aria-label={`TCGPlayer page for ${entry.card.name}`}
-                onClick={(e) => e.stopPropagation()}
-              >
-                $
-              </a>
-            )}
-          </li>
-        ))}
+                <img
+                  src={entry.card.imageUrl}
+                  alt=""
+                  className="collection-row__thumb"
+                  loading="lazy"
+                />
+                <div className="collection-row__body">
+                  <span className="collection-row__name">
+                    {entry.card.name}
+                    <span
+                      className={
+                        entry.finish === "foil"
+                          ? "finish-pill finish-pill--foil"
+                          : "finish-pill"
+                      }
+                    >
+                      {finishLabel(entry.finish)}
+                    </span>
+                    {entry.forSale && (
+                      <span className="finish-pill finish-pill--sale">Sale</span>
+                    )}
+                    <span className="finish-pill">{entry.condition}</span>
+                  </span>
+                  <span className="collection-row__set">
+                    {entry.card.setPrefix} #{entry.card.collectorNumber}
+                    {unit != null
+                      ? ` · ${formatUsd(unit)}${
+                          entry.askingPrice != null && market != null
+                            ? ` ask (mkt ${formatUsd(market)})`
+                            : ""
+                        }`
+                      : ""}
+                  </span>
+                  {entry.note ? (
+                    <span className="collection-row__note">{entry.note}</span>
+                  ) : null}
+                </div>
+                <div className="collection-row__right">
+                  <span className="collection-row__qty" aria-label="Quantity">
+                    ×{entry.quantity}
+                  </span>
+                  {line != null && (
+                    <span className="collection-row__line">{formatUsd(line)}</span>
+                  )}
+                </div>
+              </button>
+              {url && !selectMode && (
+                <a
+                  className="collection-row__link"
+                  href={url}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={`TCGPlayer page for ${entry.card.name}`}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  $
+                </a>
+              )}
+            </li>
+          );
+        })}
       </ul>
 
       {visible.length === 0 && (
