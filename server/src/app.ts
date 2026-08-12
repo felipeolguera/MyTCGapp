@@ -1,148 +1,124 @@
 import express, { type Request, type Response } from "express";
 import cors from "cors";
-import { randomUUID } from "node:crypto";
-import { CARDS, getCardById } from "./cards.js";
-import type { Deck, DeckEntry } from "./types.js";
+import { createCollectionStore } from "./collection.js";
+import { searchGaCards } from "./gatcg.js";
+import type { GaCardEdition } from "./types.js";
 
-const MAX_COPIES_PER_CARD = 3;
-const MAX_DECK_SIZE = 30;
-
-export function createApp() {
+export function createApp(
+  deps: {
+    searchCards?: typeof searchGaCards;
+    collection?: ReturnType<typeof createCollectionStore>;
+  } = {},
+) {
   const app = express();
-  app.use(cors());
-  app.use(express.json());
+  const searchCards = deps.searchCards ?? searchGaCards;
+  const collection = deps.collection ?? createCollectionStore();
 
-  // In-memory deck store. Seeded with one starter deck.
-  const decks = new Map<string, Deck>();
-  const starterId = "starter-deck";
-  decks.set(starterId, {
-    id: starterId,
-    name: "Starter Deck",
-    entries: [],
-  });
+  app.use(cors());
+  app.use(express.json({ limit: "1mb" }));
 
   app.get("/api/health", (_req: Request, res: Response) => {
-    res.json({ status: "ok", cards: CARDS.length });
+    const summary = collection.summary();
+    res.json({
+      status: "ok",
+      game: "grand-archive",
+      collection: {
+        uniqueCards: summary.uniqueCards,
+        totalCards: summary.totalCards,
+      },
+    });
   });
 
-  app.get("/api/cards", (req: Request, res: Response) => {
-    const element = String(req.query.element ?? "").toLowerCase();
-    const cards = element
-      ? CARDS.filter((card) => card.element === element)
-      : CARDS;
-    res.json({ cards });
-  });
-
-  app.get("/api/cards/:id", (req: Request, res: Response) => {
-    const card = getCardById(req.params.id);
-    if (!card) {
-      res.status(404).json({ error: "Card not found" });
-      return;
-    }
-    res.json({ card });
-  });
-
-  app.get("/api/decks", (_req: Request, res: Response) => {
-    res.json({ decks: [...decks.values()] });
-  });
-
-  app.get("/api/decks/:id", (req: Request, res: Response) => {
-    const deck = decks.get(req.params.id);
-    if (!deck) {
-      res.status(404).json({ error: "Deck not found" });
-      return;
-    }
-    res.json({ deck: decorateDeck(deck) });
-  });
-
-  app.post("/api/decks", (req: Request, res: Response) => {
-    const name = String(req.body?.name ?? "").trim() || "New Deck";
-    const deck: Deck = { id: randomUUID(), name, entries: [] };
-    decks.set(deck.id, deck);
-    res.status(201).json({ deck: decorateDeck(deck) });
-  });
-
-  // Add a single copy of a card to a deck.
-  app.post("/api/decks/:id/cards", (req: Request, res: Response) => {
-    const deck = decks.get(req.params.id);
-    if (!deck) {
-      res.status(404).json({ error: "Deck not found" });
-      return;
-    }
-    const cardId = String(req.body?.cardId ?? "");
-    if (!getCardById(cardId)) {
-      res.status(400).json({ error: "Unknown cardId" });
+  /** Search Grand Archive by card name (proxied). */
+  app.get("/api/ga/search", async (req: Request, res: Response) => {
+    const name = String(req.query.name ?? "").trim();
+    if (!name) {
+      res.status(400).json({ error: "Query param `name` is required" });
       return;
     }
 
-    const totalCards = deck.entries.reduce((sum, e) => sum + e.count, 0);
-    if (totalCards >= MAX_DECK_SIZE) {
-      res.status(409).json({ error: `Deck is full (max ${MAX_DECK_SIZE} cards)` });
-      return;
+    try {
+      const pageSize = Number(req.query.page_size ?? 12);
+      const cards = await searchCards(name, Number.isFinite(pageSize) ? pageSize : 12);
+      res.json({ cards, count: cards.length });
+    } catch (err) {
+      res.status(502).json({
+        error: err instanceof Error ? err.message : "Grand Archive lookup failed",
+      });
     }
-
-    const existing = deck.entries.find((e) => e.cardId === cardId);
-    if (existing) {
-      if (existing.count >= MAX_COPIES_PER_CARD) {
-        res
-          .status(409)
-          .json({ error: `Max ${MAX_COPIES_PER_CARD} copies of a card allowed` });
-        return;
-      }
-      existing.count += 1;
-    } else {
-      deck.entries.push({ cardId, count: 1 });
-    }
-
-    res.json({ deck: decorateDeck(deck) });
   });
 
-  // Remove a single copy of a card from a deck.
-  app.delete("/api/decks/:id/cards/:cardId", (req: Request, res: Response) => {
-    const deck = decks.get(req.params.id);
-    if (!deck) {
-      res.status(404).json({ error: "Deck not found" });
+  app.get("/api/collection", (_req: Request, res: Response) => {
+    res.json({ collection: collection.summary() });
+  });
+
+  /**
+   * Add scanned cards to the collection.
+   * Body: { card: GaCardEdition, quantity: number }
+   * Quantity is added to any existing copies of the same edition.
+   */
+  app.post("/api/collection", (req: Request, res: Response) => {
+    const quantity = Number(req.body?.quantity);
+    const card = req.body?.card as GaCardEdition | undefined;
+
+    if (!card?.editionId || !card?.name) {
+      res.status(400).json({ error: "Body must include a card with editionId and name" });
       return;
     }
-    const entry = deck.entries.find((e) => e.cardId === req.params.cardId);
-    if (!entry) {
-      res.status(404).json({ error: "Card not in deck" });
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 999) {
+      res.status(400).json({ error: "quantity must be an integer from 1 to 999" });
       return;
     }
-    entry.count -= 1;
-    if (entry.count <= 0) {
-      deck.entries = deck.entries.filter((e) => e.cardId !== req.params.cardId);
+
+    try {
+      const entry = collection.add(card, quantity);
+      res.status(201).json({ entry, collection: collection.summary() });
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : "Could not update collection",
+      });
     }
-    res.json({ deck: decorateDeck(deck) });
+  });
+
+  /** Set absolute quantity (0 removes). */
+  app.put("/api/collection/:editionId", (req: Request, res: Response) => {
+    const quantity = Number(req.body?.quantity);
+    const card = req.body?.card as GaCardEdition | undefined;
+    const existing = collection.get(req.params.editionId);
+
+    if (!Number.isInteger(quantity) || quantity < 0 || quantity > 999) {
+      res.status(400).json({ error: "quantity must be an integer from 0 to 999" });
+      return;
+    }
+
+    const cardPayload = card ?? existing?.card;
+    if (!cardPayload) {
+      res.status(400).json({ error: "card payload required when entry does not exist" });
+      return;
+    }
+    if (cardPayload.editionId !== req.params.editionId) {
+      res.status(400).json({ error: "card.editionId must match URL" });
+      return;
+    }
+
+    try {
+      const entry = collection.upsert(cardPayload, quantity);
+      res.json({ entry, collection: collection.summary() });
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : "Could not update collection",
+      });
+    }
+  });
+
+  app.delete("/api/collection/:editionId", (req: Request, res: Response) => {
+    const removed = collection.remove(req.params.editionId);
+    if (!removed) {
+      res.status(404).json({ error: "Card not in collection" });
+      return;
+    }
+    res.json({ collection: collection.summary() });
   });
 
   return app;
-}
-
-// Expand deck entries with full card data and summary stats for the client.
-function decorateDeck(deck: Deck) {
-  const cards = deck.entries
-    .map((entry: DeckEntry) => {
-      const card = getCardById(entry.cardId);
-      return card ? { ...card, count: entry.count } : null;
-    })
-    .filter((c): c is NonNullable<typeof c> => c !== null);
-
-  const totalCards = cards.reduce((sum, c) => sum + c.count, 0);
-  const averageCost =
-    totalCards === 0
-      ? 0
-      : Number(
-          (
-            cards.reduce((sum, c) => sum + c.cost * c.count, 0) / totalCards
-          ).toFixed(2),
-        );
-
-  return {
-    id: deck.id,
-    name: deck.name,
-    cards,
-    totalCards,
-    averageCost,
-  };
 }

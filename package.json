@@ -2,7 +2,7 @@
   "name": "mytcgapp",
   "version": "0.1.0",
   "private": true,
-  "description": "MyTCGapp - a trading card game deck builder (Express API + React client)",
+  "description": "Archive Binder - Grand Archive TCG collection scanner (Express API + React client)",
   "workspaces": [
     "server",
     "client"
@@ -14,7 +14,7 @@
     "build": "npm run build --workspace server && npm run build --workspace client",
     "typecheck": "npm run typecheck --workspace server && npm run typecheck --workspace client",
     "lint": "npm run lint --workspace server && npm run lint --workspace client",
-    "test": "npm run test --workspace server",
+    "test": "npm run test --workspace server && npm run test --workspace client",
     "start": "npm run start --workspace server"
   },
   "devDependencies": {

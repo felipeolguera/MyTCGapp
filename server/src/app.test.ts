@@ -1,60 +1,108 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import request from "supertest";
 import { createApp } from "./app.js";
+import type { GaCardEdition } from "./types.js";
 
-describe("MyTCGapp API", () => {
-  const app = createApp();
+const sampleCard: GaCardEdition = {
+  editionId: "ed-slime-001",
+  cardId: "card-slime",
+  name: "Spirit of Slime",
+  slug: "spirit-of-slime-rec-slm",
+  types: ["CHAMPION"],
+  classes: ["SPIRIT"],
+  element: "NORM",
+  elements: ["NORM"],
+  costMemory: 0,
+  costReserve: null,
+  level: 0,
+  life: 15,
+  power: null,
+  effect: "On Enter: Draw seven cards.",
+  rarity: 1,
+  collectorNumber: "001",
+  imagePath: "/cards/images/oldrleovjj.jpg",
+  imageUrl: "https://api.gatcg.com/cards/images/oldrleovjj.jpg",
+  setName: "Re:Collection Slime Sovereign",
+  setPrefix: "ReC-SLM",
+  illustrator: "木叶",
+};
 
-  it("reports health with card count", async () => {
+describe("Grand Archive collection API", () => {
+  it("reports health with empty collection", async () => {
+    const app = createApp({
+      searchCards: vi.fn(async () => []),
+    });
     const res = await request(app).get("/api/health");
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("ok");
-    expect(res.body.cards).toBeGreaterThan(0);
+    expect(res.body.game).toBe("grand-archive");
+    expect(res.body.collection.totalCards).toBe(0);
   });
 
-  it("lists all cards", async () => {
-    const res = await request(app).get("/api/cards");
+  it("requires a name for GA search", async () => {
+    const app = createApp({ searchCards: vi.fn(async () => []) });
+    const res = await request(app).get("/api/ga/search");
+    expect(res.status).toBe(400);
+  });
+
+  it("proxies GA card search results", async () => {
+    const searchCards = vi.fn(async () => [sampleCard]);
+    const app = createApp({ searchCards });
+    const res = await request(app).get("/api/ga/search?name=slime");
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body.cards)).toBe(true);
-    expect(res.body.cards.length).toBeGreaterThan(0);
+    expect(searchCards).toHaveBeenCalledWith("slime", 12);
+    expect(res.body.cards[0].name).toBe("Spirit of Slime");
   });
 
-  it("filters cards by element", async () => {
-    const res = await request(app).get("/api/cards?element=fire");
+  it("adds quantity to collection and aggregates copies", async () => {
+    const app = createApp({ searchCards: vi.fn(async () => []) });
+
+    const first = await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 2 });
+    expect(first.status).toBe(201);
+    expect(first.body.entry.quantity).toBe(2);
+    expect(first.body.collection.totalCards).toBe(2);
+
+    const second = await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 3 });
+    expect(second.status).toBe(201);
+    expect(second.body.entry.quantity).toBe(5);
+    expect(second.body.collection.uniqueCards).toBe(1);
+    expect(second.body.collection.totalCards).toBe(5);
+  });
+
+  it("rejects invalid quantity on add", async () => {
+    const app = createApp({ searchCards: vi.fn(async () => []) });
+    const res = await request(app)
+      .post("/api/collection")
+      .send({ card: sampleCard, quantity: 0 });
+    expect(res.status).toBe(400);
+  });
+
+  it("sets absolute quantity and removes at zero", async () => {
+    const app = createApp({ searchCards: vi.fn(async () => []) });
+    await request(app).post("/api/collection").send({ card: sampleCard, quantity: 4 });
+
+    const updated = await request(app)
+      .put(`/api/collection/${sampleCard.editionId}`)
+      .send({ quantity: 1 });
+    expect(updated.status).toBe(200);
+    expect(updated.body.entry.quantity).toBe(1);
+
+    const cleared = await request(app)
+      .put(`/api/collection/${sampleCard.editionId}`)
+      .send({ quantity: 0 });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.collection.uniqueCards).toBe(0);
+  });
+
+  it("deletes a collection entry", async () => {
+    const app = createApp({ searchCards: vi.fn(async () => []) });
+    await request(app).post("/api/collection").send({ card: sampleCard, quantity: 1 });
+    const res = await request(app).delete(`/api/collection/${sampleCard.editionId}`);
     expect(res.status).toBe(200);
-    expect(res.body.cards.every((c: { element: string }) => c.element === "fire")).toBe(
-      true,
-    );
-  });
-
-  it("adds and removes a card from a deck with summary stats", async () => {
-    const created = await request(app).post("/api/decks").send({ name: "Test Deck" });
-    expect(created.status).toBe(201);
-    const deckId = created.body.deck.id;
-
-    const added = await request(app)
-      .post(`/api/decks/${deckId}/cards`)
-      .send({ cardId: "ember-sprite" });
-    expect(added.status).toBe(200);
-    expect(added.body.deck.totalCards).toBe(1);
-    expect(added.body.deck.averageCost).toBe(1);
-
-    const removed = await request(app).delete(
-      `/api/decks/${deckId}/cards/ember-sprite`,
-    );
-    expect(removed.status).toBe(200);
-    expect(removed.body.deck.totalCards).toBe(0);
-  });
-
-  it("enforces max 3 copies of a card", async () => {
-    const created = await request(app).post("/api/decks").send({ name: "Copies" });
-    const deckId = created.body.deck.id;
-    for (let i = 0; i < 3; i++) {
-      await request(app).post(`/api/decks/${deckId}/cards`).send({ cardId: "gale-scout" });
-    }
-    const overflow = await request(app)
-      .post(`/api/decks/${deckId}/cards`)
-      .send({ cardId: "gale-scout" });
-    expect(overflow.status).toBe(409);
+    expect(res.body.collection.totalCards).toBe(0);
   });
 });
