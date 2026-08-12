@@ -3,7 +3,7 @@ import { addToCollection, fetchCollection, searchCards } from "./api";
 import { CameraCapture } from "./CameraCapture";
 import { CardDetail } from "./CardDetail";
 import { CollectionView } from "./CollectionView";
-import { extractCardNameCandidates } from "./ocr";
+import { loadCardIndex, matchCardVisually } from "./visualMatch";
 import type {
   CollectionSummary,
   GaCardEdition,
@@ -17,12 +17,14 @@ export function App() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<GaCardEdition[]>([]);
+  const [matchScores, setMatchScores] = useState<Record<string, number>>({});
   const [selected, setSelected] = useState<GaCardEdition | null>(null);
   const [quantity, setQuantity] = useState("1");
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [indexReady, setIndexReady] = useState(false);
   const [collection, setCollection] = useState<CollectionSummary | null>(null);
   const [collectionLoading, setCollectionLoading] = useState(true);
   const [sessionAdds, setSessionAdds] = useState(0);
@@ -42,16 +44,67 @@ export function App() {
     void refreshCollection();
   }, [refreshCollection]);
 
+  useEffect(() => {
+    void loadCardIndex()
+      .then((idx) => {
+        setIndexReady(true);
+        setStatus(`Visual index ready (${idx.total} printings)`);
+      })
+      .catch(() => {
+        setIndexReady(false);
+        setStatus("Visual index unavailable — use name search");
+      });
+  }, []);
+
   function resetScan(keepStatus = false) {
     setPhase("ready");
     setSelected(null);
     setResults([]);
+    setMatchScores({});
     setQuantity("1");
     setBusy(false);
     setSaving(false);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
     if (!keepStatus) setStatus(null);
+  }
+
+  function applyVisualMatches(
+    matches: { card: GaCardEdition; score: number; distance: number }[],
+  ) {
+    const cards = matches.map((m) => m.card);
+    const scores: Record<string, number> = {};
+    for (const m of matches) scores[m.card.editionId] = m.score;
+    setMatchScores(scores);
+    setResults(cards);
+
+    if (cards.length === 0) {
+      setPhase("results");
+      setStatus("No visual match — try a flatter photo or search by name");
+      return;
+    }
+
+    setQuery(cards[0].name);
+    const best = matches[0];
+    if (best.distance <= 12 && cards.length === 1) {
+      setSelected(cards[0]);
+      setPhase("detail");
+      setQuantity("1");
+      setStatus(`Matched “${cards[0].name}” (${Math.round(best.score * 100)}%)`);
+      return;
+    }
+    if (best.distance <= 10 && best.score >= 0.82) {
+      setSelected(cards[0]);
+      setPhase("detail");
+      setQuantity("1");
+      setStatus(`Matched “${cards[0].name}” (${Math.round(best.score * 100)}%)`);
+      return;
+    }
+
+    setPhase("results");
+    setStatus(
+      `Top ${cards.length} visual match${cards.length === 1 ? "" : "es"} — pick yours`,
+    );
   }
 
   async function runSearch(name: string) {
@@ -65,15 +118,25 @@ export function App() {
     setStatus(`Looking up “${trimmed}”…`);
     try {
       const cards = await searchCards(trimmed);
-      setResults(cards);
+      // Prefer unique cards, keep first edition of each name/cardId
+      const seen = new Set<string>();
+      const unique: GaCardEdition[] = [];
+      for (const c of cards) {
+        if (seen.has(c.cardId)) continue;
+        seen.add(c.cardId);
+        unique.push(c);
+        if (unique.length >= 12) break;
+      }
+      setMatchScores({});
+      setResults(unique);
       setPhase("results");
       setStatus(
-        cards.length
-          ? `${cards.length} edition${cards.length === 1 ? "" : "s"} found`
-          : "No matches — try a shorter name",
+        unique.length
+          ? `${unique.length} card${unique.length === 1 ? "" : "s"} found`
+          : "No matches — try another name",
       );
-      if (cards.length === 1) {
-        setSelected(cards[0]);
+      if (unique.length === 1) {
+        setSelected(unique[0]);
         setPhase("detail");
         setQuantity("1");
       }
@@ -90,45 +153,19 @@ export function App() {
     setPhase("recognizing");
     setBusy(true);
     setError(null);
-    setStatus("Reading card text…");
+    setStatus("Comparing card art to Grand Archive…");
 
     try {
-      const candidates = await extractCardNameCandidates(blob);
-      if (candidates.length === 0) {
-        setStatus("Couldn’t read the name — search manually.");
-        setPhase("ready");
-        return;
-      }
-
-      setQuery(candidates[0]);
-      // Try candidates in order until we get hits.
-      for (const candidate of candidates) {
-        setStatus(`Looking up “${candidate}”…`);
-        const cards = await searchCards(candidate);
-        if (cards.length > 0) {
-          setResults(cards);
-          setQuery(candidate);
-          setPhase(cards.length === 1 ? "detail" : "results");
-          if (cards.length === 1) {
-            setSelected(cards[0]);
-            setQuantity("1");
-          }
-          setStatus(
-            cards.length === 1
-              ? "Match found — set quantity"
-              : `${cards.length} possible matches`,
-          );
-          return;
-        }
-      }
-      setPhase("results");
-      setResults([]);
-      setStatus("No database match — refine the name and search.");
+      const matches = await matchCardVisually(blob, {
+        limit: 5,
+        maxDistance: 40,
+      });
+      applyVisualMatches(matches);
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Recognition failed — try manual search.",
+          : "Visual match failed — try name search.",
       );
       setPhase("ready");
     } finally {
@@ -199,7 +236,7 @@ export function App() {
               <section className="scan">
                 <CameraCapture
                   onCapture={(blob, url) => void handleCapture(blob, url)}
-                  disabled={busy}
+                  disabled={busy || !indexReady}
                 />
 
                 {previewUrl && (
@@ -218,7 +255,7 @@ export function App() {
                   }}
                 >
                   <label className="search__label" htmlFor="card-query">
-                    Or search by name
+                    Or search by exact card name
                   </label>
                   <div className="search__row">
                     <input
@@ -240,34 +277,54 @@ export function App() {
                 </form>
 
                 {phase === "recognizing" && (
-                  <p className="muted pulse">Recognizing card…</p>
+                  <p className="muted pulse">Matching card art…</p>
                 )}
 
                 {phase === "results" && (
-                  <ul className="results">
-                    {results.map((card) => (
-                      <li key={card.editionId}>
-                        <button
-                          type="button"
-                          className="result"
-                          onClick={() => {
-                            setSelected(card);
-                            setQuantity("1");
-                            setPhase("detail");
-                            setStatus(null);
-                          }}
-                        >
-                          <img src={card.imageUrl} alt="" loading="lazy" />
-                          <span>
-                            <strong>{card.name}</strong>
-                            <small>
-                              {card.setPrefix} #{card.collectorNumber}
-                            </small>
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+                  <>
+                    <ul className="results">
+                      {results.map((card) => (
+                        <li key={card.editionId}>
+                          <button
+                            type="button"
+                            className="result"
+                            onClick={() => {
+                              setSelected(card);
+                              setQuantity("1");
+                              setPhase("detail");
+                              setStatus(null);
+                            }}
+                          >
+                            <img src={card.imageUrl} alt="" loading="lazy" />
+                            <span>
+                              <strong>{card.name}</strong>
+                              <small>
+                                {card.setPrefix} #{card.collectorNumber}
+                                {matchScores[card.editionId] != null
+                                  ? ` · ${Math.round(matchScores[card.editionId] * 100)}%`
+                                  : ""}
+                              </small>
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    {results.length > 0 && (
+                      <button
+                        type="button"
+                        className="btn btn--ghost"
+                        onClick={() => {
+                          setResults([]);
+                          setMatchScores({});
+                          setStatus(
+                            "None matched — retake with even lighting or search by name",
+                          );
+                        }}
+                      >
+                        None of these
+                      </button>
+                    )}
+                  </>
                 )}
               </section>
             )}

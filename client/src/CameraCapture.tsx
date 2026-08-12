@@ -108,6 +108,7 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
           </>
         )}
       </div>
+      <p className="camera__tip">Fill the guide · avoid glare · hold steady</p>
       <button
         type="button"
         className="btn btn--snap"
