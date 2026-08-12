@@ -37,7 +37,6 @@ body,
   width: 100%;
   min-height: 100%;
   max-width: 100%;
-  overflow-x: hidden;
 }
 
 html {
@@ -49,10 +48,12 @@ body {
   min-height: 100dvh;
   width: 100%;
   color: var(--text);
-  overscroll-behavior-y: contain;
   -webkit-tap-highlight-color: transparent;
-  overflow-x: hidden;
+  /* Clip horizontal bleed without creating a nested Y scroll trap. */
+  overflow-x: clip;
+  overflow-y: auto;
   padding-top: env(safe-area-inset-top, 0px);
+  -webkit-overflow-scrolling: touch;
 }
 
 button,
@@ -70,8 +71,8 @@ textarea {
   min-height: 100dvh;
   margin: 0;
   display: grid;
-  grid-template-rows: auto auto 1fr auto;
-  overflow-x: hidden;
+  /* auto rows so the document grows and body scrolls on swipe */
+  grid-template-rows: auto auto auto auto;
   padding:
     0.7rem
     max(0.85rem, env(safe-area-inset-right, 0px))
@@ -366,10 +367,8 @@ textarea {
 }
 
 .main {
-  min-height: 0;
   min-width: 0;
   max-width: 100%;
-  overflow-x: hidden;
 }
 
 .camera {
@@ -807,7 +806,6 @@ textarea {
 .collection-view {
   min-width: 0;
   max-width: 100%;
-  overflow-x: hidden;
 }
 
 .collection-view__header {
@@ -1137,7 +1135,6 @@ textarea {
   border: 1px solid var(--line);
   min-width: 0;
   max-width: 100%;
-  overflow: hidden;
 }
 
 .collection-row:has(.collection-row__actions) {
