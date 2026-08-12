@@ -1,5 +1,5 @@
 import type { CardCondition, CardFinish, GaCardEdition } from "./types.js";
-import { normalizeAskingPrice, normalizeCondition } from "./types.js";
+import { normalizeAskingPrice, normalizeBinderLabel, normalizeBinderPage, normalizeBinderSlot, normalizeCondition } from "./types.js";
 import { searchGaCards } from "./gatcg.js";
 import { createCollectionStore } from "./collection.js";
 import cors from "cors";
@@ -86,11 +86,23 @@ export function createApp(
         req.body?.askingPrice === undefined
           ? undefined
           : normalizeAskingPrice(req.body.askingPrice);
+      const binder =
+        req.body?.binder === undefined
+          ? undefined
+          : normalizeBinderLabel(req.body.binder);
+      const page =
+        req.body?.page === undefined
+          ? undefined
+          : normalizeBinderPage(req.body.page);
+      const slot =
+        req.body?.slot === undefined
+          ? undefined
+          : normalizeBinderSlot(req.body.slot);
       const { entry, previousQuantity } = collection.add(
         card,
         quantity,
         finish,
-        { forSale, condition, askingPrice },
+        { forSale, condition, askingPrice, binder, page, slot },
       );
       res
         .status(201)
@@ -161,6 +173,18 @@ export function createApp(
       req.body?.note === undefined
         ? undefined
         : String(req.body.note).slice(0, 280);
+    const binder =
+      req.body?.binder === undefined
+        ? undefined
+        : normalizeBinderLabel(req.body.binder);
+    const page =
+      req.body?.page === undefined
+        ? undefined
+        : normalizeBinderPage(req.body.page);
+    const slot =
+      req.body?.slot === undefined
+        ? undefined
+        : normalizeBinderSlot(req.body.slot);
 
     if (!Number.isInteger(quantity) || quantity < 0 || quantity > 999) {
       res
@@ -186,6 +210,9 @@ export function createApp(
         condition,
         askingPrice,
         note,
+        binder,
+        page,
+        slot,
       });
       res.json({ entry, collection: collection.summary() });
     } catch (err) {

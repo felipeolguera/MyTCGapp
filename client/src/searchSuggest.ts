@@ -19,6 +19,9 @@ export function suggestCollectionQueries(
   entries: Array<{
     id: string;
     note?: string;
+    binder?: string;
+    page?: number | null;
+    slot?: number | null;
     card: {
       name: string;
       setPrefix: string;
@@ -82,6 +85,20 @@ export function suggestCollectionQueries(
         },
         Math.min(...codeRanks) + 4,
       );
+    }
+
+    if (entry.binder) {
+      const binderRank = rankMatch(entry.binder, q);
+      if (binderRank >= 0) {
+        push(
+          {
+            id: `binder:${entry.binder.toLowerCase()}`,
+            primary: entry.binder,
+            secondary: "Binder",
+          },
+          binderRank + 5,
+        );
+      }
     }
 
     if (entry.note) {

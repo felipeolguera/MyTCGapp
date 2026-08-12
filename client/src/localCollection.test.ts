@@ -133,4 +133,26 @@ describe("localCollection edit/undo helpers", () => {
     expect(added.entry.condition).toBe("LP");
     expect(added.entry.askingPrice).toBe(9.5);
   });
+
+  it("stores binder geography on add and update", () => {
+    const added = addLocalCollection(card, 1, "normal", {
+      binder: "Trade",
+      page: 12,
+      slot: 4,
+    });
+    expect(added.entry.binder).toBe("Trade");
+    expect(added.entry.page).toBe(12);
+    expect(added.entry.slot).toBe(4);
+    const updated = updateLocalCollection(added.entry.id, {
+      quantity: 1,
+      finish: "normal",
+      card,
+      binder: "Main",
+      page: 3,
+      slot: null,
+    });
+    expect(updated.entry.binder).toBe("Main");
+    expect(updated.entry.page).toBe(3);
+    expect(updated.entry.slot).toBeNull();
+  });
 });

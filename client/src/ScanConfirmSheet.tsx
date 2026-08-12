@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import type { CardCondition, CardFinish, GaCardEdition } from "./types";
-import { CARD_CONDITIONS, finishLabel } from "./types";
+import {
+  CARD_CONDITIONS,
+  finishLabel,
+  normalizeBinderLabel,
+  normalizeBinderPage,
+  normalizeBinderSlot,
+} from "./types";
 import { QuantityPad } from "./QuantityPad";
 import {
   finishToPrinting,
@@ -8,11 +14,19 @@ import {
   loadPriceIndex,
   lookupCardPrice,
 } from "./prices";
+import {
+  readGeoDefaults,
+  rememberGeoAfterSave,
+  type BinderGeoDefaults,
+} from "./binderGeoDefaults";
 
 export interface ScanConfirmSellMeta {
   forSale: boolean;
   condition: CardCondition;
   askingPrice: number | null;
+  binder: string;
+  page: number | null;
+  slot: number | null;
 }
 
 export type ScanIntent = "add" | "audit";
@@ -50,12 +64,14 @@ export function ScanConfirmSheet({
   const [forSale, setForSale] = useState(false);
   const [condition, setCondition] = useState<CardCondition>("NM");
   const [askMarket, setAskMarket] = useState(false);
+  const [geo, setGeo] = useState<BinderGeoDefaults>(() => readGeoDefaults());
   const auditing = scanIntent === "audit";
 
   useEffect(() => {
     setForSale(false);
     setCondition("NM");
     setAskMarket(false);
+    setGeo(readGeoDefaults());
   }, [card.editionId]);
 
   useEffect(() => {
@@ -77,6 +93,29 @@ export function ScanConfirmSheet({
 
   const qty = Math.max(1, Number(quantity) || 1);
   const line = unitPrice != null ? unitPrice * qty : null;
+
+  function emitSave() {
+    const binder = normalizeBinderLabel(geo.binder);
+    const page = normalizeBinderPage(geo.page);
+    const slot = normalizeBinderSlot(geo.slot);
+    if (!auditing) {
+      const next = rememberGeoAfterSave({
+        binder: geo.binder,
+        page: geo.page,
+        slot: geo.slot,
+        advanceSlot: geo.advanceSlot,
+      });
+      setGeo(next);
+    }
+    onSaveNext({
+      forSale: auditing ? false : forSale,
+      condition,
+      askingPrice: !auditing && forSale && askMarket ? unitPrice : null,
+      binder,
+      page,
+      slot,
+    });
+  }
 
   return (
     <section className="scan-confirm" aria-label="Confirm scanned card">
@@ -134,6 +173,66 @@ export function ScanConfirmSheet({
 
       {!auditing && (
         <>
+          <div className="scan-confirm__geo" aria-label="Binder location">
+            <label className="collection-toolbar__field">
+              <span>Binder</span>
+              <input
+                type="text"
+                value={geo.binder}
+                onChange={(e) =>
+                  setGeo((g) => ({
+                    ...g,
+                    binder: e.target.value.slice(0, 40),
+                  }))
+                }
+                placeholder="Main, Trade…"
+                maxLength={40}
+                disabled={saving}
+              />
+            </label>
+            <label className="collection-toolbar__field">
+              <span>Page</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={999}
+                value={geo.page}
+                onChange={(e) =>
+                  setGeo((g) => ({ ...g, page: e.target.value }))
+                }
+                placeholder="—"
+                disabled={saving}
+              />
+            </label>
+            <label className="collection-toolbar__field">
+              <span>Slot</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={99}
+                value={geo.slot}
+                onChange={(e) =>
+                  setGeo((g) => ({ ...g, slot: e.target.value }))
+                }
+                placeholder="—"
+                disabled={saving}
+              />
+            </label>
+          </div>
+          <label className="scan-confirm__check scan-confirm__check--ask">
+            <input
+              type="checkbox"
+              checked={geo.advanceSlot}
+              onChange={(e) =>
+                setGeo((g) => ({ ...g, advanceSlot: e.target.checked }))
+              }
+              disabled={saving}
+            />
+            Auto-advance slot after save
+          </label>
+
           <label className="scan-confirm__check">
             <input
               type="checkbox"
@@ -180,14 +279,7 @@ export function ScanConfirmSheet({
       <QuantityPad
         value={quantity}
         onChange={onQuantityChange}
-        onSaveNext={() =>
-          onSaveNext({
-            forSale: auditing ? false : forSale,
-            condition,
-            askingPrice:
-              !auditing && forSale && askMarket ? unitPrice : null,
-          })
-        }
+        onSaveNext={emitSave}
         saving={saving}
         saveLabel={auditing ? "Subtract & Next" : "Save & Next"}
       />

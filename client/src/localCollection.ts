@@ -8,6 +8,9 @@ import type {
 import {
   collectionEntryId,
   normalizeAskingPrice,
+  normalizeBinderLabel,
+  normalizeBinderPage,
+  normalizeBinderSlot,
   normalizeCondition,
 } from "./types";
 
@@ -23,6 +26,9 @@ export interface CollectionEntryPatch {
   condition?: CardCondition;
   askingPrice?: number | null;
   note?: string;
+  binder?: string;
+  page?: number | null;
+  slot?: number | null;
 }
 
 /** Optional sell metadata applied when adding from scan confirm. */
@@ -30,6 +36,9 @@ export interface AddCollectionMeta {
   forSale?: boolean;
   condition?: CardCondition;
   askingPrice?: number | null;
+  binder?: string;
+  page?: number | null;
+  slot?: number | null;
 }
 
 function normalizeEntry(raw: Partial<CollectionEntry> & {
@@ -53,6 +62,9 @@ function normalizeEntry(raw: Partial<CollectionEntry> & {
     condition: normalizeCondition(raw.condition),
     askingPrice: normalizeAskingPrice(raw.askingPrice),
     note: typeof raw.note === "string" ? raw.note.slice(0, 280) : "",
+    binder: normalizeBinderLabel(raw.binder),
+    page: normalizeBinderPage(raw.page),
+    slot: normalizeBinderSlot(raw.slot),
   };
 }
 
@@ -134,12 +146,18 @@ function summarize(entries: CollectionEntry[]): CollectionSummary {
 
 function defaultsFrom(
   existing?: CollectionEntry,
-): Pick<CollectionEntry, "forSale" | "condition" | "askingPrice" | "note"> {
+): Pick<
+  CollectionEntry,
+  "forSale" | "condition" | "askingPrice" | "note" | "binder" | "page" | "slot"
+> {
   return {
     forSale: existing?.forSale ?? false,
     condition: existing?.condition ?? "NM",
     askingPrice: existing?.askingPrice ?? null,
     note: existing?.note ?? "",
+    binder: existing?.binder ?? "",
+    page: existing?.page ?? null,
+    slot: existing?.slot ?? null,
   };
 }
 
@@ -180,6 +198,14 @@ export function addLocalCollection(
         ? normalizeAskingPrice(meta.askingPrice)
         : base.askingPrice,
     note: base.note,
+    binder:
+      meta?.binder !== undefined
+        ? normalizeBinderLabel(meta.binder)
+        : base.binder,
+    page:
+      meta?.page !== undefined ? normalizeBinderPage(meta.page) : base.page,
+    slot:
+      meta?.slot !== undefined ? normalizeBinderSlot(meta.slot) : base.slot,
   };
 
   const next = existing
@@ -230,6 +256,20 @@ export function updateLocalCollection(
       patch.note !== undefined
         ? patch.note.slice(0, 280)
         : (existing?.note ?? targetExisting?.note ?? ""),
+    binder:
+      patch.binder !== undefined
+        ? normalizeBinderLabel(patch.binder)
+        : normalizeBinderLabel(
+            existing?.binder ?? targetExisting?.binder ?? "",
+          ),
+    page:
+      patch.page !== undefined
+        ? normalizeBinderPage(patch.page)
+        : normalizeBinderPage(existing?.page ?? targetExisting?.page),
+    slot:
+      patch.slot !== undefined
+        ? normalizeBinderSlot(patch.slot)
+        : normalizeBinderSlot(existing?.slot ?? targetExisting?.slot),
   };
 
   if (quantity === 0) {

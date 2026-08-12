@@ -55,6 +55,9 @@ function entry(): CollectionEntry {
     condition: "NM",
     askingPrice: null,
     note: "",
+    binder: "",
+    page: null,
+    slot: null,
   };
 }
 

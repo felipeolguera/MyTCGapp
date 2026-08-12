@@ -268,6 +268,9 @@ export function App() {
     forSale: boolean;
     condition: CardCondition;
     askingPrice: number | null;
+    binder: string;
+    page: number | null;
+    slot: number | null;
   }) {
     if (!selected) return;
     const qty = Number(quantity);
@@ -301,6 +304,9 @@ export function App() {
               forSale: existing.forSale,
               askingPrice: existing.askingPrice,
               note: existing.note,
+              binder: existing.binder,
+              page: existing.page,
+              slot: existing.slot,
             },
           ],
           "sold-one",
@@ -318,6 +324,9 @@ export function App() {
                 condition: existing.condition,
                 askingPrice: existing.askingPrice,
                 note: existing.note,
+                binder: existing.binder,
+                page: existing.page,
+                slot: existing.slot,
               });
         setCollection(next);
         setLastAdd(null);
@@ -332,6 +341,9 @@ export function App() {
             forSale: meta.forSale,
             condition: meta.condition,
             askingPrice: meta.askingPrice,
+            binder: meta.binder,
+            page: meta.page,
+            slot: meta.slot,
           });
         setCollection(next);
         setSessionAdds((n) => n + qty);
@@ -342,10 +354,14 @@ export function App() {
           addedQty: qty,
           previousQuantity,
         });
+        const loc =
+          meta.binder || meta.page != null || meta.slot != null
+            ? ` · ${[meta.binder, meta.page != null ? `p${meta.page}` : "", meta.slot != null ? `s${meta.slot}` : ""].filter(Boolean).join(" ")}`
+            : "";
         setStatus(
           `Added ×${qty} ${selected.name} (${finishLabel(finish)})${
             meta.forSale ? " · for sale" : ""
-          }${batchMode ? " · ready for next snap" : ""}`,
+          }${loc}${batchMode ? " · ready for next snap" : ""}`,
         );
       }
       if (batchMode) {

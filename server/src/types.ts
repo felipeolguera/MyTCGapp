@@ -46,6 +46,9 @@ export interface CollectionEntry {
   condition: CardCondition;
   askingPrice: number | null;
   note: string;
+  binder: string;
+  page: number | null;
+  slot: number | null;
 }
 
 export interface CollectionSummary {
@@ -72,4 +75,40 @@ export function normalizeAskingPrice(raw: unknown): number | null {
   const n = Number(raw);
   if (!Number.isFinite(n) || n < 0) return null;
   return Math.round(n * 100) / 100;
+}
+
+export function normalizeBinderLabel(raw: unknown): string {
+  if (typeof raw !== "string") return "";
+  return raw.trim().slice(0, 40);
+}
+
+export function normalizeBinderPage(raw: unknown): number | null {
+  if (raw == null || raw === "") return null;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1 || n > 999) return null;
+  return n;
+}
+
+export function normalizeBinderSlot(raw: unknown): number | null {
+  if (raw == null || raw === "") return null;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1 || n > 99) return null;
+  return n;
+}
+
+export function formatBinderLocation(entry: {
+  binder: string;
+  page: number | null;
+  slot: number | null;
+}): string {
+  const parts: string[] = [];
+  if (entry.binder) parts.push(entry.binder);
+  if (entry.page != null && entry.slot != null) {
+    parts.push(`p${entry.page}/s${entry.slot}`);
+  } else if (entry.page != null) {
+    parts.push(`p${entry.page}`);
+  } else if (entry.slot != null) {
+    parts.push(`s${entry.slot}`);
+  }
+  return parts.join(" · ");
 }

@@ -5,9 +5,10 @@ import type {
   CollectionEntry,
   CollectionSummary,
 } from "./types";
-import { CARD_CONDITIONS, finishLabel } from "./types";
+import { CARD_CONDITIONS, finishLabel, formatBinderLocation } from "./types";
 import {
   filterAndSortCollectionRows,
+  listCollectionBinders,
   listCollectionSetPrefixes,
   type CollectionFinishFilter,
   type CollectionSaleFilter,
@@ -93,6 +94,9 @@ interface CollectionViewProps {
       condition?: CardCondition;
       askingPrice?: number | null;
       note?: string;
+      binder?: string;
+      page?: number | null;
+      slot?: number | null;
     },
   ) => Promise<void>;
   onDeleteEntry: (id: string) => Promise<void>;
@@ -125,12 +129,16 @@ export function CollectionView({
   const [editCondition, setEditCondition] = useState<CardCondition>("NM");
   const [editAsking, setEditAsking] = useState("");
   const [editNote, setEditNote] = useState("");
+  const [editBinder, setEditBinder] = useState("");
+  const [editPage, setEditPage] = useState("");
+  const [editSlot, setEditSlot] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [query, setQuery] = useState("");
   const [finishFilter, setFinishFilter] =
     useState<CollectionFinishFilter>("all");
   const [saleFilter, setSaleFilter] = useState<CollectionSaleFilter>("all");
   const [setFilter, setSetFilter] = useState<string>("all");
+  const [binderFilter, setBinderFilter] = useState<string>("all");
   const [sort, setSort] = useState<CollectionSort>("name");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
@@ -185,13 +193,19 @@ export function CollectionView({
         finish: finishFilter,
         sale: saleFilter,
         setPrefix: setFilter,
+        binder: binderFilter,
         sort,
       }),
-    [priced, query, finishFilter, saleFilter, setFilter, sort],
+    [priced, query, finishFilter, saleFilter, setFilter, binderFilter, sort],
   );
 
   const setPrefixes = useMemo(
     () => (collection ? listCollectionSetPrefixes(collection.entries) : []),
+    [collection],
+  );
+
+  const binderLabels = useMemo(
+    () => (collection ? listCollectionBinders(collection.entries) : []),
     [collection],
   );
 
@@ -203,6 +217,7 @@ export function CollectionView({
     finishFilter !== "all" ||
     saleFilter !== "all" ||
     setFilter !== "all" ||
+    binderFilter !== "all" ||
     sort !== "name";
   const backupReminder = backupReminderMessage(backupMeta);
   const selectedCount = selectedIds.size;
@@ -241,6 +256,9 @@ export function CollectionView({
       forSale: entry.forSale,
       askingPrice: entry.askingPrice,
       note: entry.note,
+      binder: entry.binder,
+      page: entry.page,
+      slot: entry.slot,
     }));
   }
 
@@ -262,6 +280,9 @@ export function CollectionView({
     setEditCondition(entry.condition);
     setEditAsking(entry.askingPrice != null ? String(entry.askingPrice) : "");
     setEditNote(entry.note ?? "");
+    setEditBinder(entry.binder ?? "");
+    setEditPage(entry.page != null ? String(entry.page) : "");
+    setEditSlot(entry.slot != null ? String(entry.slot) : "");
     onError?.(null);
   }
 
@@ -301,6 +322,24 @@ export function CollectionView({
       onError?.("Asking price must be a valid number");
       return;
     }
+    const pageRaw = editPage.trim();
+    const slotRaw = editSlot.trim();
+    const page = pageRaw === "" ? null : Number(pageRaw);
+    const slot = slotRaw === "" ? null : Number(slotRaw);
+    if (
+      page != null &&
+      (!Number.isInteger(page) || page < 1 || page > 999)
+    ) {
+      onError?.("Page must be 1–999");
+      return;
+    }
+    if (
+      slot != null &&
+      (!Number.isInteger(slot) || slot < 1 || slot > 99)
+    ) {
+      onError?.("Slot must be 1–99");
+      return;
+    }
     setSavingEdit(true);
     onError?.(null);
     try {
@@ -312,6 +351,9 @@ export function CollectionView({
         condition: editCondition,
         askingPrice: asking,
         note: editNote.trim().slice(0, 280),
+        binder: editBinder.trim().slice(0, 40),
+        page,
+        slot,
       });
       onStatus?.(
         `Updated ${editing.card.name} · ${finishLabel(editFinish)} ×${qty}`,
@@ -490,6 +532,9 @@ export function CollectionView({
           condition: entry.condition,
           askingPrice: entry.askingPrice,
           note: entry.note,
+          binder: entry.binder,
+          page: entry.page,
+          slot: entry.slot,
         });
         onStatus?.(`Sold −1 · ${entry.card.name} now ×${nextQty}`);
       }
@@ -524,6 +569,9 @@ export function CollectionView({
             condition: entry.condition,
             askingPrice: entry.askingPrice,
             note: entry.note,
+            binder: entry.binder,
+            page: entry.page,
+            slot: entry.slot,
           });
         }
       }
@@ -711,6 +759,9 @@ export function CollectionView({
           condition: entry.condition,
           askingPrice: asking,
           note: entry.note,
+          binder: entry.binder,
+          page: entry.page,
+          slot: entry.slot,
         });
         updated += 1;
       }
@@ -757,6 +808,11 @@ export function CollectionView({
               ? line.askingPrice
               : (existing?.askingPrice ?? null),
           note: line.note ?? existing?.note ?? "",
+          binder: line.binder ?? existing?.binder ?? "",
+          page:
+            line.page !== undefined ? line.page : (existing?.page ?? null),
+          slot:
+            line.slot !== undefined ? line.slot : (existing?.slot ?? null),
         });
       }
       bumpLedger();
@@ -1215,7 +1271,7 @@ export function CollectionView({
             onChange={setQuery}
             suggestions={querySuggestions}
             onPick={pickQuerySuggestion}
-            placeholder="Search name, set, #, or note"
+            placeholder="Search name, set, #, note, or binder"
             aria-label="Search collection"
           />
         </div>
@@ -1263,6 +1319,22 @@ export function CollectionView({
             </select>
           </label>
           <label className="collection-toolbar__field">
+            <span>Binder</span>
+            <select
+              value={binderFilter}
+              onChange={(e) => setBinderFilter(e.target.value)}
+            >
+              <option value="all">All binders</option>
+              {binderLabels.map((label) => (
+                <option key={label} value={label}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="collection-toolbar__row">
+          <label className="collection-toolbar__field">
             <span>Sort</span>
             <select
               value={sort}
@@ -1270,6 +1342,7 @@ export function CollectionView({
             >
               <option value="name">Name</option>
               <option value="set">Set</option>
+              <option value="location">Location</option>
               <option value="price-desc">Price high → low</option>
               <option value="price-asc">Price low → high</option>
               <option value="qty-desc">Qty high → low</option>
@@ -1404,6 +1477,46 @@ export function CollectionView({
             </label>
           </div>
 
+          <div className="entry-editor__geo" aria-label="Binder location">
+            <label className="collection-toolbar__field">
+              <span>Binder</span>
+              <input
+                type="text"
+                value={editBinder}
+                onChange={(e) => setEditBinder(e.target.value.slice(0, 40))}
+                placeholder="Main, Trade…"
+                maxLength={40}
+                disabled={savingEdit}
+              />
+            </label>
+            <label className="collection-toolbar__field">
+              <span>Page</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={999}
+                value={editPage}
+                onChange={(e) => setEditPage(e.target.value)}
+                placeholder="—"
+                disabled={savingEdit}
+              />
+            </label>
+            <label className="collection-toolbar__field">
+              <span>Slot</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={99}
+                value={editSlot}
+                onChange={(e) => setEditSlot(e.target.value)}
+                placeholder="—"
+                disabled={savingEdit}
+              />
+            </label>
+          </div>
+
           <label className="entry-editor__note">
             <span>Note</span>
             <textarea
@@ -1501,6 +1614,11 @@ export function CollectionView({
                         }`
                       : ""}
                   </span>
+                  {formatBinderLocation(entry) ? (
+                    <span className="collection-row__loc">
+                      {formatBinderLocation(entry)}
+                    </span>
+                  ) : null}
                   {entry.note ? (
                     <span className="collection-row__note">{entry.note}</span>
                   ) : null}

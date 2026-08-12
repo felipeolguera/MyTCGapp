@@ -8,6 +8,9 @@ const entries = [
   {
     id: "a:normal",
     note: "trade bait",
+    binder: "Trade",
+    page: 12,
+    slot: 4,
     card: {
       name: "Spirit of Slime",
       setPrefix: "AMB",
@@ -17,6 +20,7 @@ const entries = [
   },
   {
     id: "b:foil",
+    binder: "Main",
     card: {
       name: "Alice, Distorted Queen",
       setPrefix: "DOA",
@@ -35,6 +39,11 @@ describe("searchSuggest", () => {
   it("suggests set prefixes", () => {
     const hits = suggestCollectionQueries(entries, "doa");
     expect(hits.some((h) => h.primary === "DOA")).toBe(true);
+  });
+
+  it("suggests binder labels", () => {
+    const hits = suggestCollectionQueries(entries, "tra");
+    expect(hits.some((h) => h.primary === "Trade")).toBe(true);
   });
 
   it("builds card suggestion rows", () => {

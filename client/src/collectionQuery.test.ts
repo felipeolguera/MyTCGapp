@@ -42,6 +42,9 @@ function row(
     prefix?: string;
     num?: string;
     note?: string;
+    binder?: string;
+    page?: number | null;
+    slot?: number | null;
   } = {},
 ): CollectionListRow {
   const editionId = `${name}-${finish}`;
@@ -65,6 +68,9 @@ function row(
       condition: "NM",
       askingPrice: null,
       note: opts.note ?? "",
+      binder: opts.binder ?? "",
+      page: opts.page ?? null,
+      slot: opts.slot ?? null,
     },
     unit,
     line: unit == null ? null : unit * quantity,
@@ -114,5 +120,23 @@ describe("collectionQuery", () => {
       sort: "name",
     });
     expect(result.map((r) => r.entry.card.name)).toEqual(["Alpha"]);
+  });
+
+  it("matches binder location and sorts by location", () => {
+    const rows = [
+      row("Zed", "normal", { binder: "Trade", page: 2, slot: 1 }),
+      row("Alpha", "foil", { binder: "Main", page: 1, slot: 9 }),
+      row("Bravo", "normal", { binder: "Main", page: 1, slot: 2 }),
+    ];
+    expect(matchesCollectionQuery(rows[0].entry, "trade")).toBe(true);
+    expect(matchesCollectionQuery(rows[1].entry, "p1")).toBe(true);
+    const result = filterAndSortCollectionRows(rows, {
+      query: "",
+      finish: "all",
+      sale: "all",
+      binder: "Main",
+      sort: "location",
+    });
+    expect(result.map((r) => r.entry.card.name)).toEqual(["Bravo", "Alpha"]);
   });
 });

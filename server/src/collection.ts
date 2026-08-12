@@ -8,6 +8,9 @@ import type {
 import {
   collectionEntryId,
   normalizeAskingPrice,
+  normalizeBinderLabel,
+  normalizeBinderPage,
+  normalizeBinderSlot,
   normalizeCondition,
 } from "./types.js";
 
@@ -19,11 +22,21 @@ export interface CollectionEntryPatch {
   condition?: CardCondition;
   askingPrice?: number | null;
   note?: string;
+  binder?: string;
+  page?: number | null;
+  slot?: number | null;
 }
 
 function normalizeNote(raw: unknown): string {
   return typeof raw === "string" ? raw.slice(0, 280) : "";
 }
+
+type EntryMeta = Partial<
+  Pick<
+    CollectionEntry,
+    "forSale" | "condition" | "askingPrice" | "note" | "binder" | "page" | "slot"
+  >
+>;
 
 export function createCollectionStore() {
   const entries = new Map<string, CollectionEntry>();
@@ -46,9 +59,7 @@ export function createCollectionStore() {
     card: GaCardEdition,
     quantity: number,
     finish: CardFinish = "normal",
-    meta?: Partial<
-      Pick<CollectionEntry, "forSale" | "condition" | "askingPrice" | "note">
-    >,
+    meta?: EntryMeta,
   ): CollectionEntry {
     if (!Number.isInteger(quantity) || quantity < 0) {
       throw new Error("Quantity must be a non-negative integer");
@@ -56,6 +67,17 @@ export function createCollectionStore() {
 
     const id = collectionEntryId(card.editionId, finish);
     const existing = entries.get(id);
+    const geo = {
+      binder: normalizeBinderLabel(
+        meta?.binder !== undefined ? meta.binder : existing?.binder,
+      ),
+      page: normalizeBinderPage(
+        meta?.page !== undefined ? meta.page : existing?.page,
+      ),
+      slot: normalizeBinderSlot(
+        meta?.slot !== undefined ? meta.slot : existing?.slot,
+      ),
+    };
     if (quantity === 0) {
       entries.delete(id);
       return {
@@ -75,6 +97,7 @@ export function createCollectionStore() {
         note: normalizeNote(
           meta?.note !== undefined ? meta.note : existing?.note,
         ),
+        ...geo,
       };
     }
 
@@ -95,6 +118,7 @@ export function createCollectionStore() {
       note: normalizeNote(
         meta?.note !== undefined ? meta.note : existing?.note,
       ),
+      ...geo,
     };
     entries.set(id, entry);
     return entry;
@@ -104,9 +128,7 @@ export function createCollectionStore() {
     card: GaCardEdition,
     quantity: number,
     finish: CardFinish = "normal",
-    meta?: Partial<
-      Pick<CollectionEntry, "forSale" | "condition" | "askingPrice" | "note">
-    >,
+    meta?: EntryMeta,
   ): { entry: CollectionEntry; previousQuantity: number } {
     if (!Number.isInteger(quantity) || quantity < 1) {
       throw new Error("Quantity must be a positive integer");
@@ -124,6 +146,9 @@ export function createCollectionStore() {
             ? meta.askingPrice
             : existing?.askingPrice,
         note: meta?.note !== undefined ? meta.note : existing?.note,
+        binder: meta?.binder !== undefined ? meta.binder : existing?.binder,
+        page: meta?.page !== undefined ? meta.page : existing?.page,
+        slot: meta?.slot !== undefined ? meta.slot : existing?.slot,
       }),
       previousQuantity,
     };
@@ -150,6 +175,9 @@ export function createCollectionStore() {
           ? patch.askingPrice
           : existing?.askingPrice,
       note: patch.note !== undefined ? patch.note : existing?.note,
+      binder: patch.binder !== undefined ? patch.binder : existing?.binder,
+      page: patch.page !== undefined ? patch.page : existing?.page,
+      slot: patch.slot !== undefined ? patch.slot : existing?.slot,
     });
   }
 
@@ -170,6 +198,9 @@ export function createCollectionStore() {
         condition: normalizeCondition(row.condition),
         askingPrice: normalizeAskingPrice(row.askingPrice),
         note: normalizeNote(row.note),
+        binder: normalizeBinderLabel(row.binder),
+        page: normalizeBinderPage(row.page),
+        slot: normalizeBinderSlot(row.slot),
       });
     }
     return summary();

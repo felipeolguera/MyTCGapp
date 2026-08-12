@@ -17,6 +17,9 @@ export interface SaleLine {
   forSale?: boolean;
   askingPrice?: number | null;
   note?: string;
+  binder?: string;
+  page?: number | null;
+  slot?: number | null;
 }
 
 export interface SaleRecord {
