@@ -15,6 +15,8 @@ export interface ScanConfirmSellMeta {
   askingPrice: number | null;
 }
 
+export type ScanIntent = "add" | "audit";
+
 interface ScanConfirmSheetProps {
   card: GaCardEdition;
   quantity: string;
@@ -22,6 +24,7 @@ interface ScanConfirmSheetProps {
   matchScore?: number;
   /** Existing owned qty for this card+finish (0 if new). */
   ownedQuantity?: number;
+  scanIntent?: ScanIntent;
   onQuantityChange: (value: string) => void;
   onFinishChange: (finish: CardFinish) => void;
   onSaveNext: (meta: ScanConfirmSellMeta) => void;
@@ -36,6 +39,7 @@ export function ScanConfirmSheet({
   finish,
   matchScore,
   ownedQuantity = 0,
+  scanIntent = "add",
   onQuantityChange,
   onFinishChange,
   onSaveNext,
@@ -46,6 +50,7 @@ export function ScanConfirmSheet({
   const [forSale, setForSale] = useState(false);
   const [condition, setCondition] = useState<CardCondition>("NM");
   const [askMarket, setAskMarket] = useState(false);
+  const auditing = scanIntent === "audit";
 
   useEffect(() => {
     setForSale(false);
@@ -90,7 +95,13 @@ export function ScanConfirmSheet({
             </p>
           ) : null}
           {ownedQuantity > 0 ? (
-            <p className="scan-confirm__owned">Already own ×{ownedQuantity}</p>
+            <p className="scan-confirm__owned">
+              {auditing ? `In binder ×${ownedQuantity}` : `Already own ×${ownedQuantity}`}
+            </p>
+          ) : auditing ? (
+            <p className="scan-confirm__owned scan-confirm__owned--warn">
+              Not in binder
+            </p>
           ) : null}
         </div>
         <button
@@ -121,45 +132,49 @@ export function ScanConfirmSheet({
         ))}
       </div>
 
-      <label className="scan-confirm__check">
-        <input
-          type="checkbox"
-          checked={forSale}
-          onChange={(e) => setForSale(e.target.checked)}
-          disabled={saving}
-        />
-        For sale
-      </label>
-
-      {forSale && (
-        <div className="scan-confirm__sell">
-          <label className="collection-toolbar__field">
-            <span>Condition</span>
-            <select
-              value={condition}
-              onChange={(e) =>
-                setCondition(e.target.value as CardCondition)
-              }
-              disabled={saving}
-            >
-              {CARD_CONDITIONS.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="scan-confirm__check scan-confirm__check--ask">
+      {!auditing && (
+        <>
+          <label className="scan-confirm__check">
             <input
               type="checkbox"
-              checked={askMarket}
-              onChange={(e) => setAskMarket(e.target.checked)}
-              disabled={saving || unitPrice == null}
+              checked={forSale}
+              onChange={(e) => setForSale(e.target.checked)}
+              disabled={saving}
             />
-            Ask = market
-            {unitPrice != null ? ` (${formatUsd(unitPrice)})` : ""}
+            For sale
           </label>
-        </div>
+
+          {forSale && (
+            <div className="scan-confirm__sell">
+              <label className="collection-toolbar__field">
+                <span>Condition</span>
+                <select
+                  value={condition}
+                  onChange={(e) =>
+                    setCondition(e.target.value as CardCondition)
+                  }
+                  disabled={saving}
+                >
+                  {CARD_CONDITIONS.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="scan-confirm__check scan-confirm__check--ask">
+                <input
+                  type="checkbox"
+                  checked={askMarket}
+                  onChange={(e) => setAskMarket(e.target.checked)}
+                  disabled={saving || unitPrice == null}
+                />
+                Ask = market
+                {unitPrice != null ? ` (${formatUsd(unitPrice)})` : ""}
+              </label>
+            </div>
+          )}
+        </>
       )}
 
       <QuantityPad
@@ -167,13 +182,14 @@ export function ScanConfirmSheet({
         onChange={onQuantityChange}
         onSaveNext={() =>
           onSaveNext({
-            forSale,
+            forSale: auditing ? false : forSale,
             condition,
-            askingPrice: forSale && askMarket ? unitPrice : null,
+            askingPrice:
+              !auditing && forSale && askMarket ? unitPrice : null,
           })
         }
         saving={saving}
-        saveLabel="Save & Next"
+        saveLabel={auditing ? "Subtract & Next" : "Save & Next"}
       />
     </section>
   );

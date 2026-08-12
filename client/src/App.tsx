@@ -10,7 +10,7 @@ import {
   updateCollectionEntry,
 } from "./api";
 import { CameraCapture, type CapturePayload } from "./CameraCapture";
-import { ScanConfirmSheet } from "./ScanConfirmSheet";
+import { ScanConfirmSheet, type ScanIntent } from "./ScanConfirmSheet";
 import { CollectionView } from "./CollectionView";
 import { loadCardIndex, matchCardVisually, shouldAutoConfirm } from "./visualMatch";
 import type {
@@ -24,6 +24,8 @@ import type {
 } from "./types";
 import { collectionEntryId, finishLabel } from "./types";
 import { APP_VERSION } from "./version";
+import { exportCardCode } from "./exportCollection";
+import { recordSale } from "./salesLedger";
 
 interface LastAdd {
   entryId: string;
@@ -55,6 +57,7 @@ export function App() {
   const [undoing, setUndoing] = useState(false);
   const [captureWarnings, setCaptureWarnings] = useState<string[]>([]);
   const [batchMode, setBatchMode] = useState(true);
+  const [scanIntent, setScanIntent] = useState<ScanIntent>("add");
 
   const refreshCollection = useCallback(async () => {
     setCollectionLoading(true);
@@ -217,30 +220,75 @@ export function App() {
     setSaving(true);
     setError(null);
     try {
-      const { entry, collection: next, previousQuantity } = await addToCollection(
-        selected,
-        qty,
-        finish,
-        {
-          forSale: meta.forSale,
-          condition: meta.condition,
-          askingPrice: meta.askingPrice,
-        },
-      );
-      setCollection(next);
-      setSessionAdds((n) => n + qty);
-      setLastAdd({
-        entryId: entry.id,
-        card: selected,
-        finish,
-        addedQty: qty,
-        previousQuantity,
-      });
-      setStatus(
-        `Added ×${qty} ${selected.name} (${finishLabel(finish)})${
-          meta.forSale ? " · for sale" : ""
-        }${batchMode ? " · ready for next snap" : ""}`,
-      );
+      if (scanIntent === "audit") {
+        const entryId = collectionEntryId(selected.editionId, finish);
+        const existing = collection?.entries.find((e) => e.id === entryId);
+        if (!existing) {
+          throw new Error("Not in binder — switch finish or Add mode");
+        }
+        const subtract = Math.min(qty, existing.quantity);
+        const nextQty = existing.quantity - subtract;
+        recordSale(
+          [
+            {
+              entryId: existing.id,
+              name: existing.card.name,
+              finish: existing.finish,
+              condition: existing.condition,
+              setCode: exportCardCode(existing),
+              quantity: subtract,
+              unitPrice: existing.askingPrice,
+              card: existing.card,
+              forSale: existing.forSale,
+              askingPrice: existing.askingPrice,
+              note: existing.note,
+            },
+          ],
+          "sold-one",
+        );
+        const { collection: next } =
+          nextQty < 1
+            ? await removeFromCollection(existing.id).then((r) => ({
+                collection: r.collection,
+              }))
+            : await updateCollectionEntry(existing.id, {
+                quantity: nextQty,
+                finish: existing.finish,
+                card: existing.card,
+                forSale: existing.forSale,
+                condition: existing.condition,
+                askingPrice: existing.askingPrice,
+                note: existing.note,
+              });
+        setCollection(next);
+        setLastAdd(null);
+        setStatus(
+          `Audit −${subtract} ${selected.name} (${finishLabel(finish)})${
+            nextQty < 1 ? " · removed" : ` · left ×${nextQty}`
+          }${batchMode ? " · ready for next snap" : ""}`,
+        );
+      } else {
+        const { entry, collection: next, previousQuantity } =
+          await addToCollection(selected, qty, finish, {
+            forSale: meta.forSale,
+            condition: meta.condition,
+            askingPrice: meta.askingPrice,
+          });
+        setCollection(next);
+        setSessionAdds((n) => n + qty);
+        setLastAdd({
+          entryId: entry.id,
+          card: selected,
+          finish,
+          addedQty: qty,
+          previousQuantity,
+        });
+        setStatus(
+          `Added ×${qty} ${selected.name} (${finishLabel(finish)})${
+            meta.forSale ? " · for sale" : ""
+          }${batchMode ? " · ready for next snap" : ""}`,
+        );
+      }
       if (batchMode) {
         setSelected(null);
         setResults([]);
@@ -375,10 +423,36 @@ export function App() {
                 />
                 Batch scan
               </label>
+              <div className="scan__intent" role="group" aria-label="Scan mode">
+                <button
+                  type="button"
+                  className={
+                    scanIntent === "add"
+                      ? "scan__intent-btn scan__intent-btn--active"
+                      : "scan__intent-btn"
+                  }
+                  onClick={() => setScanIntent("add")}
+                >
+                  Add
+                </button>
+                <button
+                  type="button"
+                  className={
+                    scanIntent === "audit"
+                      ? "scan__intent-btn scan__intent-btn--active"
+                      : "scan__intent-btn"
+                  }
+                  onClick={() => setScanIntent("audit")}
+                >
+                  Audit
+                </button>
+              </div>
               <span className="muted">
-                {batchMode
-                  ? "Camera stays ready after Save & Next"
-                  : "Returns to idle after each save"}
+                {scanIntent === "audit"
+                  ? "Subtract from binder on confirm"
+                  : batchMode
+                    ? "Camera stays ready after Save & Next"
+                    : "Returns to idle after each save"}
               </span>
             </div>
 
@@ -417,6 +491,7 @@ export function App() {
                       e.id === collectionEntryId(selected.editionId, finish),
                   )?.quantity ?? 0
                 }
+                scanIntent={scanIntent}
                 onQuantityChange={setQuantity}
                 onFinishChange={setFinish}
                 onSaveNext={(meta) => void handleSaveNext(meta)}

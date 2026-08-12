@@ -129,6 +129,28 @@ input {
   color: var(--text);
 }
 
+.scan__intent {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.scan__intent-btn {
+  border: 0;
+  background: transparent;
+  color: var(--text-soft);
+  padding: 0.35rem 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.scan__intent-btn--active {
+  background: rgba(212, 175, 108, 0.18);
+  color: var(--gold);
+}
+
 .result--best {
   border-color: rgba(212, 175, 108, 0.55);
   box-shadow: inset 0 0 0 1px rgba(212, 175, 108, 0.2);
@@ -175,6 +197,10 @@ input {
   color: var(--gold);
   font-size: 0.85rem;
   font-weight: 650;
+}
+
+.scan-confirm__owned--warn {
+  color: #e8a0a0;
 }
 
 .scan-confirm__price {
@@ -696,6 +722,35 @@ input {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
+}
+
+.ask-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  margin: 0 0 0.85rem;
+}
+
+.ask-toolbar__field {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  color: var(--text-soft);
+}
+
+.ask-toolbar__field input {
+  width: 4.2rem;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 10px;
+  padding: 0.45rem 0.55rem;
+  color: var(--text);
+}
+
+.ask-toolbar__hint {
+  font-size: 0.78rem;
 }
 
 .collection-view__export-hint {

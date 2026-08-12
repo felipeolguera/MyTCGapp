@@ -51,12 +51,16 @@ import {
 } from "./sellHelpers";
 import {
   buildSaleReceipt,
+  canUndoSale,
   formatLedgerSummary,
+  peekLastSale,
+  popLastSale,
   readSalesLedger,
   recordSale,
   type SaleLine,
 } from "./salesLedger";
 import { exportCardCode } from "./exportCollection";
+import { marketTimesPercent, parseAskPercent } from "./sellPricing";
 
 interface CollectionViewProps {
   collection: CollectionSummary | null;
@@ -123,6 +127,11 @@ export function CollectionView({
   const [ledgerSummary, setLedgerSummary] = useState(() =>
     formatLedgerSummary(readSalesLedger()),
   );
+  const [askPercent, setAskPercent] = useState("90");
+  const [canUndo, setCanUndo] = useState(() => {
+    const last = peekLastSale();
+    return Boolean(last && canUndoSale(last));
+  });
 
   useEffect(() => {
     void loadPriceIndex()
@@ -196,11 +205,17 @@ export function CollectionView({
       setCode: exportCardCode(entry),
       quantity: quantityFor(entry),
       unitPrice: entry.askingPrice ?? unit,
+      card: entry.card,
+      forSale: entry.forSale,
+      askingPrice: entry.askingPrice,
+      note: entry.note,
     }));
   }
 
   function bumpLedger() {
     setLedgerSummary(formatLedgerSummary(readSalesLedger()));
+    const last = peekLastSale();
+    setCanUndo(Boolean(last && canUndoSale(last)));
   }
 
   function openEditor(entry: CollectionEntry) {
@@ -584,6 +599,97 @@ export function CollectionView({
     }
   }
 
+  async function handleBulkAskPercent() {
+    if (visible.length === 0 || bulkBusy) return;
+    const percent = parseAskPercent(askPercent);
+    if (percent == null) {
+      onError?.("Enter a percent from 0–500 (e.g. 90)");
+      return;
+    }
+    const targets = visible.filter((r) => r.market != null);
+    if (targets.length === 0) {
+      onError?.("No market prices in this view — refresh prices first");
+      return;
+    }
+    const ok = window.confirm(
+      `Set asking to ${percent}% of market on ${targets.length} line${targets.length === 1 ? "" : "s"}?`,
+    );
+    if (!ok) return;
+    setBulkBusy(true);
+    onError?.(null);
+    try {
+      let updated = 0;
+      for (const { entry, market } of targets) {
+        const asking = marketTimesPercent(market, percent);
+        if (asking == null) continue;
+        await onUpdateEntry(entry.id, {
+          quantity: entry.quantity,
+          finish: entry.finish,
+          card: entry.card,
+          forSale: entry.forSale,
+          condition: entry.condition,
+          askingPrice: asking,
+          note: entry.note,
+        });
+        updated += 1;
+      }
+      onStatus?.(
+        `Ask = ${percent}% market on ${updated} line${updated === 1 ? "" : "s"}`,
+      );
+    } catch (err) {
+      onError?.(
+        err instanceof Error ? err.message : "Could not set asking prices",
+      );
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function handleUndoLastSale() {
+    if (bulkBusy || !canUndo) return;
+    const last = peekLastSale();
+    if (!last || !canUndoSale(last)) {
+      onError?.("Nothing to undo (older sales lack restore data)");
+      return;
+    }
+    const ok = window.confirm(
+      `Undo last sale · ${last.cardCount} card${last.cardCount === 1 ? "" : "s"} · ${formatUsd(last.total)}?`,
+    );
+    if (!ok) return;
+    setBulkBusy(true);
+    onError?.(null);
+    try {
+      const sale = popLastSale();
+      if (!sale) throw new Error("Sale already undone");
+      for (const line of sale.lines) {
+        if (!line.card) continue;
+        const existing = collection?.entries.find((e) => e.id === line.entryId);
+        const nextQty = (existing?.quantity ?? 0) + line.quantity;
+        await onUpdateEntry(line.entryId, {
+          quantity: nextQty,
+          finish: line.finish,
+          card: line.card,
+          forSale: line.forSale ?? existing?.forSale ?? false,
+          condition: line.condition,
+          askingPrice:
+            line.askingPrice !== undefined
+              ? line.askingPrice
+              : (existing?.askingPrice ?? null),
+          note: line.note ?? existing?.note ?? "",
+        });
+      }
+      bumpLedger();
+      onStatus?.(
+        `Undid sale · restored ${sale.cardCount} card${sale.cardCount === 1 ? "" : "s"}`,
+      );
+    } catch (err) {
+      bumpLedger();
+      onError?.(err instanceof Error ? err.message : "Could not undo sale");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   async function handleShareExport() {
     if (!exportArtifacts) return;
     setExporting(true);
@@ -699,7 +805,10 @@ export function CollectionView({
             {" · "}
             {formatPriceIndexAge(index)}
           </p>
-          <p className="muted collection-view__ledger-meta">{ledgerSummary}</p>
+          <p className="muted collection-view__ledger-meta">
+            {ledgerSummary}
+            {canUndo ? " · undo available" : ""}
+          </p>
           {filtered && (
             <p className="muted collection-view__filter-meta">
               Showing {visibleCards} cards · {visible.length} lines
@@ -875,7 +984,40 @@ export function CollectionView({
           >
             Sell sheet
           </button>
+          <button
+            type="button"
+            className="btn btn--ghost btn--compact"
+            onClick={() => void handleUndoLastSale()}
+            disabled={!canUndo || bulkBusy || selectMode}
+          >
+            Undo sale
+          </button>
         </div>
+      </div>
+
+      <div className="ask-toolbar">
+        <label className="ask-toolbar__field" htmlFor="ask-percent">
+          <span>Ask %</span>
+          <input
+            id="ask-percent"
+            value={askPercent}
+            onChange={(e) => setAskPercent(e.target.value)}
+            inputMode="decimal"
+            disabled={selectMode || bulkBusy}
+            aria-label="Asking price as percent of market"
+          />
+        </label>
+        <button
+          type="button"
+          className="btn btn--ghost btn--compact"
+          onClick={() => void handleBulkAskPercent()}
+          disabled={visible.length === 0 || bulkBusy || selectMode}
+        >
+          Ask = market × %
+        </button>
+        <span className="muted ask-toolbar__hint">
+          Applies to priced lines in the current view
+        </span>
       </div>
 
       <div className="collection-toolbar">

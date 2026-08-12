@@ -1,4 +1,4 @@
-import type { CardCondition, CardFinish } from "./types";
+import type { CardCondition, CardFinish, GaCardEdition } from "./types";
 import { formatUsd } from "./prices";
 
 const LEDGER_KEY = "archive-binder.sales-ledger.v1";
@@ -12,6 +12,11 @@ export interface SaleLine {
   setCode: string;
   quantity: number;
   unitPrice: number | null;
+  /** Snapshot for undo restore (optional on older ledger rows). */
+  card?: GaCardEdition;
+  forSale?: boolean;
+  askingPrice?: number | null;
+  note?: string;
 }
 
 export interface SaleRecord {
@@ -65,8 +70,26 @@ export function recordSale(
   return record;
 }
 
+export function peekLastSale(): SaleRecord | null {
+  return readSalesLedger()[0] ?? null;
+}
+
+/** Remove and return the most recent sale (for undo). */
+export function popLastSale(): SaleRecord | null {
+  const records = readSalesLedger();
+  if (records.length === 0) return null;
+  const [last, ...rest] = records;
+  writeSalesLedger(rest);
+  return last;
+}
+
 export function clearSalesLedger(): void {
   localStorage.removeItem(LEDGER_KEY);
+}
+
+/** True when every line has a card snapshot to restore. */
+export function canUndoSale(record: SaleRecord): boolean {
+  return record.lines.length > 0 && record.lines.every((l) => Boolean(l.card));
 }
 
 /** Revenue for sales on the local calendar day of `now`. */
@@ -90,7 +113,10 @@ export function sessionRevenue(
   return { total, cards, sales };
 }
 
-export function formatLedgerSummary(records: SaleRecord[], now = new Date()): string {
+export function formatLedgerSummary(
+  records: SaleRecord[],
+  now = new Date(),
+): string {
   const { total, cards, sales } = sessionRevenue(records, now);
   if (sales === 0) return "No sales today";
   return `Today ${sales} sale${sales === 1 ? "" : "s"} · ${cards} cards · ${formatUsd(total)}`;
