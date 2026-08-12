@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { assessCaptureQuality, type CaptureQuality } from "./captureQuality";
 
 export interface CapturePayload {
@@ -18,6 +18,8 @@ interface CameraCaptureProps {
   captureMode?: "card" | "page";
   pageRows?: number;
   pageCols?: number;
+  /** Centered overlay (match choices / busy). Hides the shutter while set. */
+  overlay?: ReactNode;
 }
 
 type TorchCapableTrack = MediaStreamTrack & {
@@ -32,6 +34,7 @@ export function CameraCapture({
   captureMode = "card",
   pageRows = 3,
   pageCols = 3,
+  overlay = null,
 }: CameraCaptureProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -255,10 +258,11 @@ export function CameraCapture({
                 Torch
               </button>
             )}
+            {overlay}
           </>
         )}
 
-        {!collapsed && (
+        {!collapsed && !overlay && (
           <button
             type="button"
             className="camera__shutter"
@@ -284,7 +288,7 @@ export function CameraCapture({
           </button>
         )}
       </div>
-      {!collapsed && (
+      {!collapsed && !overlay && (
         <p className="camera__tip">
           {captureMode === "page"
             ? "Fill the grid · flat page · even light"
