@@ -72,7 +72,8 @@ export type ScanPhase =
   | "capturing"
   | "recognizing"
   | "results"
-  | "detail";
+  | "detail"
+  | "page";
 
 export function collectionEntryId(
   editionId: string,

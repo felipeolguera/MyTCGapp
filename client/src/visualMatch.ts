@@ -117,10 +117,20 @@ export async function matchCardVisually(
   photo: Blob,
   opts: { limit?: number; maxDistance?: number } = {},
 ): Promise<VisualMatch[]> {
+  const { data, width, height } = await blobToRgba(photo);
+  return matchRgbaVisually(data, width, height, opts);
+}
+
+/** Match pre-decoded RGBA (used by page-grid cell crops). */
+export async function matchRgbaVisually(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  opts: { limit?: number; maxDistance?: number } = {},
+): Promise<VisualMatch[]> {
   const limit = opts.limit ?? 5;
   const maxDistance = opts.maxDistance ?? 42;
   const index = await loadCardIndex();
-  const { data, width, height } = await blobToRgba(photo);
   const probe = hashesFromRgba(data, width, height);
 
   const ranked: VisualMatch[] = [];

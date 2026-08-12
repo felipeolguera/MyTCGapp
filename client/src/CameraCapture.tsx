@@ -14,6 +14,10 @@ interface CameraCaptureProps {
   keepAwake?: boolean;
   /** Shrink preview while confirm sheet owns the screen (batch still live). */
   collapsed?: boolean;
+  /** Single-card guide vs full binder-page grid. */
+  captureMode?: "card" | "page";
+  pageRows?: number;
+  pageCols?: number;
 }
 
 type TorchCapableTrack = MediaStreamTrack & {
@@ -25,6 +29,9 @@ export function CameraCapture({
   disabled,
   keepAwake = false,
   collapsed = false,
+  captureMode = "card",
+  pageRows = 3,
+  pageCols = 3,
 }: CameraCaptureProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -141,6 +148,26 @@ export function CameraCapture({
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
+    if (captureMode === "page") {
+      // Full frame — page grid matching crops pockets later.
+      const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const quality = assessCaptureQuality(
+        image.data,
+        canvas.width,
+        canvas.height,
+      );
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob((b) => resolve(b), "image/jpeg", 0.92),
+      );
+      if (!blob) return;
+      onCapture({
+        blob,
+        previewUrl: URL.createObjectURL(blob),
+        quality,
+      });
+      return;
+    }
+
     const cropW = Math.floor(canvas.width * 0.72);
     const cropH = Math.floor(cropW * 1.4);
     const sx = Math.floor((canvas.width - cropW) / 2);
@@ -196,9 +223,23 @@ export function CameraCapture({
               muted
               aria-label="Card camera preview"
             />
-            {!collapsed && (
-              <div className="camera__guide" aria-hidden="true" />
-            )}
+            {!collapsed &&
+              (captureMode === "page" ? (
+                <div
+                  className="camera__guide camera__guide--page"
+                  aria-hidden="true"
+                  style={{
+                    gridTemplateColumns: `repeat(${pageCols}, 1fr)`,
+                    gridTemplateRows: `repeat(${pageRows}, 1fr)`,
+                  }}
+                >
+                  {Array.from({ length: pageRows * pageCols }, (_, i) => (
+                    <span key={i} className="camera__guide-cell" />
+                  ))}
+                </div>
+              ) : (
+                <div className="camera__guide" aria-hidden="true" />
+              ))}
             {torchSupported && (
               <button
                 type="button"
@@ -223,7 +264,7 @@ export function CameraCapture({
             className="camera__shutter"
             onClick={() => void handleSnap()}
             disabled={disabled || !ready || Boolean(error)}
-            aria-label="Snap card"
+            aria-label={captureMode === "page" ? "Snap binder page" : "Snap card"}
           >
             <svg
               className="camera__shutter-icon"
@@ -244,7 +285,11 @@ export function CameraCapture({
         )}
       </div>
       {!collapsed && (
-        <p className="camera__tip">Fill the guide · avoid glare · hold steady</p>
+        <p className="camera__tip">
+          {captureMode === "page"
+            ? "Fill the grid · flat page · even light"
+            : "Fill the guide · avoid glare · hold steady"}
+        </p>
       )}
     </div>
   );
