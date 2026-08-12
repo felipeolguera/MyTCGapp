@@ -50,4 +50,16 @@ describe("shouldAutoConfirm", () => {
     expect(shouldAutoConfirm([match(0.7)])).toBe(false);
     expect(shouldAutoConfirm([])).toBe(false);
   });
+
+  it("does not auto-confirm close reprint editions of the same card", () => {
+    const a = match(0.9, "Spirit");
+    const b = match(0.88, "Spirit");
+    a.card.cardId = "same";
+    b.card.cardId = "same";
+    a.card.editionId = "ed-a";
+    b.card.editionId = "ed-b";
+    a.card.setPrefix = "AMB";
+    b.card.setPrefix = "ReC";
+    expect(shouldAutoConfirm([a, b])).toBe(false);
+  });
 });

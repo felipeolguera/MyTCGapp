@@ -186,7 +186,7 @@ export function App() {
 
     try {
       const matches = await matchCardVisually(payload.blob, {
-        limit: 5,
+        limit: 8,
         maxDistance: 40,
       });
       applyVisualMatches(matches);
@@ -202,7 +202,11 @@ export function App() {
     }
   }
 
-  async function handleSaveNext() {
+  async function handleSaveNext(meta: {
+    forSale: boolean;
+    condition: CardCondition;
+    askingPrice: number | null;
+  }) {
     if (!selected) return;
     const qty = Number(quantity);
     if (!Number.isInteger(qty) || qty < 1) {
@@ -217,6 +221,11 @@ export function App() {
         selected,
         qty,
         finish,
+        {
+          forSale: meta.forSale,
+          condition: meta.condition,
+          askingPrice: meta.askingPrice,
+        },
       );
       setCollection(next);
       setSessionAdds((n) => n + qty);
@@ -229,8 +238,8 @@ export function App() {
       });
       setStatus(
         `Added ×${qty} ${selected.name} (${finishLabel(finish)})${
-          batchMode ? " · ready for next snap" : ""
-        }`,
+          meta.forSale ? " · for sale" : ""
+        }${batchMode ? " · ready for next snap" : ""}`,
       );
       if (batchMode) {
         setSelected(null);
@@ -410,7 +419,7 @@ export function App() {
                 }
                 onQuantityChange={setQuantity}
                 onFinishChange={setFinish}
-                onSaveNext={() => void handleSaveNext()}
+                onSaveNext={(meta) => void handleSaveNext(meta)}
                 onWrongCard={() => {
                   setSelected(null);
                   setPhase(results.length ? "results" : "ready");
@@ -483,6 +492,7 @@ export function App() {
                               </strong>
                               <small>
                                 {card.setPrefix} #{card.collectorNumber}
+                                {card.setName ? ` · ${card.setName}` : ""}
                                 {matchScores[card.editionId] != null
                                   ? ` · ${Math.round(matchScores[card.editionId] * 100)}%`
                                   : ""}

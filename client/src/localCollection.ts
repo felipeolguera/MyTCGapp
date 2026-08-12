@@ -25,6 +25,13 @@ export interface CollectionEntryPatch {
   note?: string;
 }
 
+/** Optional sell metadata applied when adding from scan confirm. */
+export interface AddCollectionMeta {
+  forSale?: boolean;
+  condition?: CardCondition;
+  askingPrice?: number | null;
+}
+
 function normalizeEntry(raw: Partial<CollectionEntry> & {
   editionId?: string;
   card?: GaCardEdition;
@@ -144,6 +151,7 @@ export function addLocalCollection(
   card: GaCardEdition,
   quantity: number,
   finish: CardFinish = "normal",
+  meta?: AddCollectionMeta,
 ): {
   entry: CollectionEntry;
   collection: CollectionSummary;
@@ -157,6 +165,7 @@ export function addLocalCollection(
   const entries = readEntries();
   const existing = entries.find((e) => e.id === id);
   const previousQuantity = existing?.quantity ?? 0;
+  const base = defaultsFrom(existing);
   const entry: CollectionEntry = {
     id,
     editionId: card.editionId,
@@ -164,7 +173,13 @@ export function addLocalCollection(
     quantity: previousQuantity + quantity,
     card,
     updatedAt: new Date().toISOString(),
-    ...defaultsFrom(existing),
+    forSale: meta?.forSale ?? base.forSale,
+    condition: normalizeCondition(meta?.condition ?? base.condition),
+    askingPrice:
+      meta?.askingPrice !== undefined
+        ? normalizeAskingPrice(meta.askingPrice)
+        : base.askingPrice,
+    note: base.note,
   };
 
   const next = existing

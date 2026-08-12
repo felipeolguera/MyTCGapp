@@ -148,6 +148,25 @@ describe("Grand Archive collection API", () => {
     expect(moved.body.collection.entries[0].finish).toBe("foil");
   });
 
+  it("adds with sell metadata", async () => {
+    const app = createApp({ searchCards: vi.fn(async () => []) });
+    const created = await request(app)
+      .post("/api/collection")
+      .send({
+        card: sampleCard,
+        quantity: 1,
+        finish: "foil",
+        forSale: true,
+        condition: "LP",
+        askingPrice: 6.25,
+      });
+    expect(created.status).toBe(201);
+    expect(created.body.entry.forSale).toBe(true);
+    expect(created.body.entry.condition).toBe("LP");
+    expect(created.body.entry.askingPrice).toBe(6.25);
+    expect(created.body.entry.finish).toBe("foil");
+  });
+
   it("updates sell metadata on an entry", async () => {
     const app = createApp({ searchCards: vi.fn(async () => []) });
     const created = await request(app)

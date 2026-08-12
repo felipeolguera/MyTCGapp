@@ -13,6 +13,7 @@ import {
   removeLocalCollection,
   replaceLocalCollection,
   updateLocalCollection,
+  type AddCollectionMeta,
   type CollectionEntryPatch,
 } from "./localCollection";
 import { searchCardIndex } from "./visualMatch";
@@ -62,13 +63,14 @@ export async function addToCollection(
   card: GaCardEdition,
   quantity: number,
   finish: CardFinish = "normal",
+  meta?: AddCollectionMeta,
 ): Promise<{
   entry: CollectionEntry;
   collection: CollectionSummary;
   previousQuantity: number;
 }> {
   if (isStandaloneMode()) {
-    return addLocalCollection(card, quantity, finish);
+    return addLocalCollection(card, quantity, finish, meta);
   }
   const data = await json<{
     entry: CollectionEntry;
@@ -78,7 +80,7 @@ export async function addToCollection(
     await fetch("/api/collection", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ card, quantity, finish }),
+      body: JSON.stringify({ card, quantity, finish, ...meta }),
     }),
   );
   return {

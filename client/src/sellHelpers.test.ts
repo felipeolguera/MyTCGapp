@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildAskingTotalClipboard,
+  buildListingLineClipboard,
   sumAskingTotal,
 } from "./sellHelpers";
 import type { CollectionListRow } from "./collectionQuery";
@@ -64,5 +65,13 @@ describe("sellHelpers", () => {
     const text = buildAskingTotalClipboard([row(2, 1, 5)]);
     expect(text).toContain("(2pcs)");
     expect(text).toContain("$10.00");
+  });
+
+  it("builds a single listing paste line", () => {
+    const text = buildListingLineClipboard(row(2, 1, 5));
+    expect(text).toContain("Test Card (N) NM");
+    expect(text).toContain("SET-001");
+    expect(text).toContain("$5.00");
+    expect(text).toContain("(2pcs)");
   });
 });

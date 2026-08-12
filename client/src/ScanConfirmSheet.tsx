@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import type { CardFinish, GaCardEdition } from "./types";
-import { finishLabel } from "./types";
+import type { CardCondition, CardFinish, GaCardEdition } from "./types";
+import { CARD_CONDITIONS, finishLabel } from "./types";
 import { QuantityPad } from "./QuantityPad";
 import {
   finishToPrinting,
@@ -8,6 +8,12 @@ import {
   loadPriceIndex,
   lookupCardPrice,
 } from "./prices";
+
+export interface ScanConfirmSellMeta {
+  forSale: boolean;
+  condition: CardCondition;
+  askingPrice: number | null;
+}
 
 interface ScanConfirmSheetProps {
   card: GaCardEdition;
@@ -18,7 +24,7 @@ interface ScanConfirmSheetProps {
   ownedQuantity?: number;
   onQuantityChange: (value: string) => void;
   onFinishChange: (finish: CardFinish) => void;
-  onSaveNext: () => void;
+  onSaveNext: (meta: ScanConfirmSellMeta) => void;
   onWrongCard: () => void;
   saving?: boolean;
 }
@@ -37,6 +43,15 @@ export function ScanConfirmSheet({
   saving,
 }: ScanConfirmSheetProps) {
   const [unitPrice, setUnitPrice] = useState<number | null>(null);
+  const [forSale, setForSale] = useState(false);
+  const [condition, setCondition] = useState<CardCondition>("NM");
+  const [askMarket, setAskMarket] = useState(false);
+
+  useEffect(() => {
+    setForSale(false);
+    setCondition("NM");
+    setAskMarket(false);
+  }, [card.editionId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -106,10 +121,57 @@ export function ScanConfirmSheet({
         ))}
       </div>
 
+      <label className="scan-confirm__check">
+        <input
+          type="checkbox"
+          checked={forSale}
+          onChange={(e) => setForSale(e.target.checked)}
+          disabled={saving}
+        />
+        For sale
+      </label>
+
+      {forSale && (
+        <div className="scan-confirm__sell">
+          <label className="collection-toolbar__field">
+            <span>Condition</span>
+            <select
+              value={condition}
+              onChange={(e) =>
+                setCondition(e.target.value as CardCondition)
+              }
+              disabled={saving}
+            >
+              {CARD_CONDITIONS.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="scan-confirm__check scan-confirm__check--ask">
+            <input
+              type="checkbox"
+              checked={askMarket}
+              onChange={(e) => setAskMarket(e.target.checked)}
+              disabled={saving || unitPrice == null}
+            />
+            Ask = market
+            {unitPrice != null ? ` (${formatUsd(unitPrice)})` : ""}
+          </label>
+        </div>
+      )}
+
       <QuantityPad
         value={quantity}
         onChange={onQuantityChange}
-        onSaveNext={onSaveNext}
+        onSaveNext={() =>
+          onSaveNext({
+            forSale,
+            condition,
+            askingPrice: forSale && askMarket ? unitPrice : null,
+          })
+        }
         saving={saving}
         saveLabel="Save & Next"
       />

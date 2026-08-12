@@ -41,6 +41,7 @@ import {
 } from "./prices";
 import {
   buildAskingTotalClipboard,
+  buildListingLineClipboard,
   copyText,
   sumAskingTotal,
 } from "./sellHelpers";
@@ -359,6 +360,87 @@ export function CollectionView({
     }
   }
 
+  async function handleCopyListingLine(row: {
+    entry: CollectionEntry;
+    unit: number | null;
+    line: number | null;
+    url: string | null;
+    market?: number | null;
+  }) {
+    onError?.(null);
+    try {
+      const text = buildListingLineClipboard(row);
+      await copyText(text);
+      onStatus?.(`Copied · ${text}`);
+    } catch (err) {
+      onError?.(err instanceof Error ? err.message : "Could not copy line");
+    }
+  }
+
+  async function handleSoldOne(entry: CollectionEntry) {
+    if (bulkBusy) return;
+    setBulkBusy(true);
+    onError?.(null);
+    try {
+      const nextQty = entry.quantity - 1;
+      if (nextQty < 1) {
+        await onDeleteEntry(entry.id);
+        onStatus?.(`Sold out · removed ${entry.card.name}`);
+      } else {
+        await onUpdateEntry(entry.id, {
+          quantity: nextQty,
+          finish: entry.finish,
+          card: entry.card,
+          forSale: entry.forSale,
+          condition: entry.condition,
+          askingPrice: entry.askingPrice,
+          note: entry.note,
+        });
+        onStatus?.(
+          `Sold −1 · ${entry.card.name} now ×${nextQty}`,
+        );
+      }
+      if (editing?.id === entry.id) closeEditor();
+    } catch (err) {
+      onError?.(err instanceof Error ? err.message : "Could not mark sold");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function handleBulkSoldSelected() {
+    if (selectedCount === 0 || bulkBusy) return;
+    setBulkBusy(true);
+    onError?.(null);
+    try {
+      const selected = visible.filter((r) => selectedIds.has(r.entry.id));
+      for (const { entry } of selected) {
+        const nextQty = entry.quantity - 1;
+        if (nextQty < 1) {
+          await onDeleteEntry(entry.id);
+        } else {
+          await onUpdateEntry(entry.id, {
+            quantity: nextQty,
+            finish: entry.finish,
+            card: entry.card,
+            forSale: entry.forSale,
+            condition: entry.condition,
+            askingPrice: entry.askingPrice,
+            note: entry.note,
+          });
+        }
+      }
+      onStatus?.(
+        `Sold −1 on ${selected.length} line${selected.length === 1 ? "" : "s"}`,
+      );
+      exitSelectMode();
+    } catch (err) {
+      onError?.(err instanceof Error ? err.message : "Could not mark sold");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   async function handleBulkForSale(forSale: boolean) {
     if (visible.length === 0 || bulkBusy) return;
     setBulkBusy(true);
@@ -581,6 +663,14 @@ export function CollectionView({
               disabled={selectedCount === 0 || bulkBusy}
             >
               Clear sale
+            </button>
+            <button
+              type="button"
+              className="btn btn--ghost btn--compact"
+              onClick={() => void handleBulkSoldSelected()}
+              disabled={selectedCount === 0 || bulkBusy}
+            >
+              Sold −1
             </button>
             <button
               type="button"
@@ -958,6 +1048,37 @@ export function CollectionView({
                 >
                   $
                 </a>
+              )}
+              {!selectMode && (
+                <div className="collection-row__actions">
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--compact"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void handleCopyListingLine({
+                        entry,
+                        unit,
+                        line,
+                        url,
+                        market,
+                      });
+                    }}
+                  >
+                    Copy
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--compact"
+                    disabled={bulkBusy}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void handleSoldOne(entry);
+                    }}
+                  >
+                    Sold −1
+                  </button>
+                </div>
               )}
             </li>
           );

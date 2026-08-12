@@ -76,10 +76,21 @@ export function createApp(
     }
 
     try {
+      const forSale =
+        req.body?.forSale === undefined ? undefined : Boolean(req.body.forSale);
+      const condition =
+        req.body?.condition === undefined
+          ? undefined
+          : (normalizeCondition(req.body.condition) as CardCondition);
+      const askingPrice =
+        req.body?.askingPrice === undefined
+          ? undefined
+          : normalizeAskingPrice(req.body.askingPrice);
       const { entry, previousQuantity } = collection.add(
         card,
         quantity,
         finish,
+        { forSale, condition, askingPrice },
       );
       res
         .status(201)

@@ -104,6 +104,9 @@ export function createCollectionStore() {
     card: GaCardEdition,
     quantity: number,
     finish: CardFinish = "normal",
+    meta?: Partial<
+      Pick<CollectionEntry, "forSale" | "condition" | "askingPrice" | "note">
+    >,
   ): { entry: CollectionEntry; previousQuantity: number } {
     if (!Number.isInteger(quantity) || quantity < 1) {
       throw new Error("Quantity must be a positive integer");
@@ -114,10 +117,13 @@ export function createCollectionStore() {
     const nextQty = previousQuantity + quantity;
     return {
       entry: upsert(card, nextQty, finish, {
-        forSale: existing?.forSale,
-        condition: existing?.condition,
-        askingPrice: existing?.askingPrice,
-        note: existing?.note,
+        forSale: meta?.forSale ?? existing?.forSale,
+        condition: meta?.condition ?? existing?.condition,
+        askingPrice:
+          meta?.askingPrice !== undefined
+            ? meta.askingPrice
+            : existing?.askingPrice,
+        note: meta?.note !== undefined ? meta.note : existing?.note,
       }),
       previousQuantity,
     };

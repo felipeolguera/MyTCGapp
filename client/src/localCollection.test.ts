@@ -122,4 +122,15 @@ describe("localCollection edit/undo helpers", () => {
     const next = bulkRemoveLocal([a.entry.id, b.entry.id]);
     expect(next.totalCards).toBe(0);
   });
+
+  it("applies sell meta on add", () => {
+    const added = addLocalCollection(card, 2, "foil", {
+      forSale: true,
+      condition: "LP",
+      askingPrice: 9.5,
+    });
+    expect(added.entry.forSale).toBe(true);
+    expect(added.entry.condition).toBe("LP");
+    expect(added.entry.askingPrice).toBe(9.5);
+  });
 });

@@ -139,16 +139,16 @@ export async function matchCardVisually(
       a.distance - b.distance || a.card.name.localeCompare(b.card.name),
   );
 
-  // One edition per cardId — keep closest printing.
-  const byCard = new Map<string, VisualMatch>();
+  // Keep distinct printings (editionId) so reprints/set variants stay pickable.
+  const byEdition = new Map<string, VisualMatch>();
   for (const row of ranked) {
-    const existing = byCard.get(row.card.cardId);
+    const existing = byEdition.get(row.card.editionId);
     if (!existing || row.distance < existing.distance) {
-      byCard.set(row.card.cardId, row);
+      byEdition.set(row.card.editionId, row);
     }
   }
 
-  return [...byCard.values()]
+  return [...byEdition.values()]
     .sort((a, b) => a.distance - b.distance)
     .slice(0, limit);
 }
@@ -159,7 +159,15 @@ export function shouldAutoConfirm(matches: VisualMatch[]): boolean {
   const best = matches[0];
   if (best.score < 0.78) return false;
   if (matches.length === 1) return true;
-  return best.score - matches[1].score >= 0.06;
+  const second = matches[1];
+  // Same art, different set — force a pick.
+  if (
+    best.card.cardId === second.card.cardId &&
+    best.score - second.score < 0.08
+  ) {
+    return false;
+  }
+  return best.score - second.score >= 0.06;
 }
 
 function normalizeSearchText(value: string): string {
@@ -204,11 +212,14 @@ export async function searchCardIndex(
       a.card.setPrefix.localeCompare(b.card.setPrefix),
   );
 
-  // One printing per cardId — prefer lower collector / first hit.
-  const byCard = new Map<string, IndexedCard>();
+  // Distinct printings — sellers often need the right set, not just the name.
+  const seen = new Set<string>();
+  const out: GaCardEdition[] = [];
   for (const hit of hits) {
-    if (!byCard.has(hit.card.cardId)) byCard.set(hit.card.cardId, hit.card);
-    if (byCard.size >= limit) break;
+    if (seen.has(hit.card.editionId)) continue;
+    seen.add(hit.card.editionId);
+    out.push(toEdition(hit.card));
+    if (out.length >= limit) break;
   }
-  return [...byCard.values()].map(toEdition);
+  return out;
 }
