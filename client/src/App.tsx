@@ -12,6 +12,11 @@ import {
 import { CameraCapture, type CapturePayload } from "./CameraCapture";
 import { ScanConfirmSheet, type ScanIntent } from "./ScanConfirmSheet";
 import { CollectionView } from "./CollectionView";
+import { SearchAutocomplete } from "./SearchAutocomplete";
+import {
+  suggestionsFromCards,
+  type SearchSuggestion,
+} from "./searchSuggest";
 import { loadCardIndex, matchCardVisually, shouldAutoConfirm } from "./visualMatch";
 import type {
   CardCondition,
@@ -58,6 +63,10 @@ export function App() {
   const [captureWarnings, setCaptureWarnings] = useState<string[]>([]);
   const [batchMode, setBatchMode] = useState(true);
   const [scanIntent, setScanIntent] = useState<ScanIntent>("add");
+  const [nameSuggestions, setNameSuggestions] = useState<SearchSuggestion[]>(
+    [],
+  );
+  const [suggestCards, setSuggestCards] = useState<GaCardEdition[]>([]);
 
   const refreshCollection = useCallback(async () => {
     setCollectionLoading(true);
@@ -86,6 +95,39 @@ export function App() {
       });
   }, []);
 
+  useEffect(() => {
+    if (selected || tab !== "scan") {
+      setNameSuggestions([]);
+      setSuggestCards([]);
+      return;
+    }
+    const q = query.trim();
+    if (q.length < 2) {
+      setNameSuggestions([]);
+      setSuggestCards([]);
+      return;
+    }
+    let cancelled = false;
+    const handle = window.setTimeout(() => {
+      void searchCards(q)
+        .then((cards) => {
+          if (cancelled) return;
+          setSuggestCards(cards);
+          setNameSuggestions(suggestionsFromCards(cards, 8));
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setSuggestCards([]);
+            setNameSuggestions([]);
+          }
+        });
+    }, 180);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [query, selected, tab]);
+
   function resetScan(keepStatus = false) {
     setPhase("ready");
     setSelected(null);
@@ -96,6 +138,8 @@ export function App() {
     setBusy(false);
     setSaving(false);
     setCaptureWarnings([]);
+    setNameSuggestions([]);
+    setSuggestCards([]);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
     if (!keepStatus) setStatus(null);
@@ -135,6 +179,21 @@ export function App() {
     setStatus(
       `Top ${cards.length} match${cards.length === 1 ? "" : "es"} — confirm “${cards[0].name}” (${Math.round(best.score * 100)}%)`,
     );
+  }
+
+  function pickNameSuggestion(item: SearchSuggestion) {
+    const card = suggestCards.find((c) => c.editionId === item.id);
+    setQuery(item.primary);
+    setNameSuggestions([]);
+    if (card) {
+      setSelected(card);
+      setQuantity("1");
+      setFinish("normal");
+      setPhase("detail");
+      setStatus(`Confirm ${card.name}`);
+      return;
+    }
+    void runSearch(item.primary);
   }
 
   async function runSearch(name: string) {
@@ -553,16 +612,19 @@ export function App() {
                   }}
                 >
                   <label className="search__label" htmlFor="card-query">
-                    Or search by exact card name
+                    Or search by card name
                   </label>
                   <div className="search__row">
-                    <input
+                    <SearchAutocomplete
                       id="card-query"
                       value={query}
-                      onChange={(e) => setQuery(e.target.value)}
+                      onChange={setQuery}
+                      suggestions={nameSuggestions}
+                      onPick={pickNameSuggestion}
                       placeholder="e.g. Spirit of Slime"
-                      autoComplete="off"
-                      enterKeyHint="search"
+                      disabled={busy}
+                      minChars={2}
+                      aria-label="Search card name"
                     />
                     <button
                       type="submit"

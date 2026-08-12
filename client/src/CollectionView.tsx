@@ -32,6 +32,11 @@ import {
   type ExportArtifacts,
 } from "./exportCollection";
 import { QuantityPad } from "./QuantityPad";
+import { SearchAutocomplete } from "./SearchAutocomplete";
+import {
+  suggestCollectionQueries,
+  type SearchSuggestion,
+} from "./searchSuggest";
 import {
   finishToPrinting,
   formatPriceIndexAge,
@@ -207,6 +212,18 @@ export function CollectionView({
   );
   const cartTotal = sumAskingTotal(selectedRows);
   const cartCards = selectedRows.reduce((n, r) => n + r.entry.quantity, 0);
+
+  const querySuggestions = useMemo(
+    () =>
+      collection
+        ? suggestCollectionQueries(collection.entries, query, 8)
+        : [],
+    [collection, query],
+  );
+
+  function pickQuerySuggestion(item: SearchSuggestion) {
+    setQuery(item.primary);
+  }
 
   function toSaleLines(
     rows: Array<{ entry: CollectionEntry; unit: number | null }>,
@@ -1188,17 +1205,20 @@ export function CollectionView({
       )}
 
       <div className="collection-toolbar">
-        <label className="collection-toolbar__search" htmlFor="collection-query">
-          <span className="sr-only">Search collection</span>
-          <input
+        <div className="collection-toolbar__search">
+          <span className="sr-only" id="collection-query-label">
+            Search collection
+          </span>
+          <SearchAutocomplete
             id="collection-query"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={setQuery}
+            suggestions={querySuggestions}
+            onPick={pickQuerySuggestion}
             placeholder="Search name, set, #, or note"
-            autoComplete="off"
-            enterKeyHint="search"
+            aria-label="Search collection"
           />
-        </label>
+        </div>
         <div className="collection-toolbar__row collection-toolbar__row--2">
           <label className="collection-toolbar__field">
             <span>Finish</span>
