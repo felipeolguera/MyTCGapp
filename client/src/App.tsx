@@ -86,6 +86,10 @@ export function App() {
   const [scanLayout, setScanLayout] = useState<"card" | "page">("card");
   const [pagePreset, setPagePreset] = useState<PageGridPreset>("3x3");
   const [pageCells, setPageCells] = useState<PageScanCell[]>([]);
+  const [addFlash, setAddFlash] = useState<{
+    name: string;
+    kind: "added" | "audit";
+  } | null>(null);
   const [nameSuggestions, setNameSuggestions] = useState<SearchSuggestion[]>(
     [],
   );
@@ -124,6 +128,13 @@ export function App() {
     const handle = window.setTimeout(() => setStatus(null), 2000);
     return () => window.clearTimeout(handle);
   }, [status, error]);
+
+  // Centered “[Name] Added” flash after a quick pick.
+  useEffect(() => {
+    if (!addFlash) return;
+    const handle = window.setTimeout(() => setAddFlash(null), 1600);
+    return () => window.clearTimeout(handle);
+  }, [addFlash]);
 
   useEffect(() => {
     if (selected || tab !== "scan") {
@@ -257,6 +268,7 @@ export function App() {
               });
         setCollection(next);
         setLastAdd(null);
+        setAddFlash({ name: card.name, kind: "audit" });
         setStatus(
           `Audit −1 ${card.name} (${finishLabel(finishPick)})${
             nextQty < 1 ? " · removed" : ` · left ×${nextQty}`
@@ -288,6 +300,7 @@ export function App() {
           addedQty: 1,
           previousQuantity,
         });
+        setAddFlash({ name: card.name, kind: "added" });
         setStatus(
           `Added ×1 ${card.name} (${finishLabel(finishPick)}) · ready for next snap`,
         );
@@ -710,7 +723,27 @@ export function App() {
     results.length > 0 &&
     !selected;
   const cameraOverlay =
-    scanLayout === "card" && phase === "recognizing" ? (
+    addFlash ? (
+      <div
+        className="camera__match-overlay camera__flash"
+        role="status"
+        aria-live="polite"
+      >
+        <div
+          className={
+            addFlash.kind === "audit"
+              ? "camera__flash-card camera__flash-card--audit"
+              : "camera__flash-card"
+          }
+          key={`${addFlash.kind}:${addFlash.name}`}
+        >
+          <span className="camera__flash-name">{addFlash.name}</span>
+          <span className="camera__flash-verb">
+            {addFlash.kind === "audit" ? "Removed" : "Added"}
+          </span>
+        </div>
+      </div>
+    ) : scanLayout === "card" && phase === "recognizing" ? (
       <div className="camera__match-overlay camera__match-overlay--busy">
         Matching…
       </div>
