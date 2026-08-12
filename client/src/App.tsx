@@ -11,6 +11,10 @@ import {
 } from "./api";
 import { CameraCapture, type CapturePayload } from "./CameraCapture";
 import { ScanConfirmSheet, type ScanIntent } from "./ScanConfirmSheet";
+import {
+  PageConfirmGrid,
+  type PageConfirmSaveMeta,
+} from "./PageConfirmGrid";
 import { CollectionView } from "./CollectionView";
 import { SearchAutocomplete } from "./SearchAutocomplete";
 import {
@@ -18,6 +22,14 @@ import {
   type SearchSuggestion,
 } from "./searchSuggest";
 import { loadCardIndex, matchCardVisually, shouldAutoConfirm } from "./visualMatch";
+import {
+  matchPagePhoto,
+  pageGridDims,
+  pageScanStatus,
+  revokePageCellPreviews,
+  type PageGridPreset,
+  type PageScanCell,
+} from "./pageScan";
 import type {
   CardCondition,
   CollectionEntry,
@@ -63,6 +75,9 @@ export function App() {
   const [captureWarnings, setCaptureWarnings] = useState<string[]>([]);
   const [batchMode, setBatchMode] = useState(true);
   const [scanIntent, setScanIntent] = useState<ScanIntent>("add");
+  const [scanLayout, setScanLayout] = useState<"card" | "page">("card");
+  const [pagePreset, setPagePreset] = useState<PageGridPreset>("3x3");
+  const [pageCells, setPageCells] = useState<PageScanCell[]>([]);
   const [nameSuggestions, setNameSuggestions] = useState<SearchSuggestion[]>(
     [],
   );
@@ -128,6 +143,11 @@ export function App() {
     };
   }, [query, selected, tab]);
 
+  function clearPageCells() {
+    revokePageCellPreviews(pageCells);
+    setPageCells([]);
+  }
+
   function resetScan(keepStatus = false) {
     setPhase("ready");
     setSelected(null);
@@ -140,6 +160,7 @@ export function App() {
     setCaptureWarnings([]);
     setNameSuggestions([]);
     setSuggestCards([]);
+    clearPageCells();
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
     if (!keepStatus) setStatus(null);
@@ -237,9 +258,42 @@ export function App() {
     setPreviewUrl(payload.previewUrl);
     setCaptureWarnings(payload.quality.warnings);
     setSelected(null);
+    clearPageCells();
     setPhase("recognizing");
     setBusy(true);
     setError(null);
+
+    if (scanLayout === "page") {
+      const { rows, cols } = pageGridDims(pagePreset);
+      setStatus(
+        payload.quality.warnings.length
+          ? `${payload.quality.warnings[0]} · matching page…`
+          : `Matching ${rows * cols} pockets…`,
+      );
+      try {
+        const cells = await matchPagePhoto(payload.blob, {
+          rows,
+          cols,
+          onProgress: (done, total) => {
+            setStatus(`Matching pockets… ${done}/${total}`);
+          },
+        });
+        setPageCells(cells);
+        setPhase("page");
+        setStatus(pageScanStatus(cells));
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Page match failed — try a flatter photo.",
+        );
+        setPhase("ready");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
     setStatus(
       payload.quality.warnings.length
         ? `${payload.quality.warnings[0]} · still matching…`
@@ -261,6 +315,104 @@ export function App() {
       setPhase("ready");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleSavePage(meta: PageConfirmSaveMeta) {
+    if (meta.cells.length === 0) return;
+    setSaving(true);
+    setError(null);
+    try {
+      let saved = 0;
+      let collectionNext = collection;
+      for (const cell of meta.cells) {
+        if (scanIntent === "audit") {
+          const entryId = collectionEntryId(cell.card.editionId, cell.finish);
+          const existing = collectionNext?.entries.find((e) => e.id === entryId);
+          if (!existing) continue;
+          const nextQty = existing.quantity - 1;
+          recordSale(
+            [
+              {
+                entryId: existing.id,
+                name: existing.card.name,
+                finish: existing.finish,
+                condition: existing.condition,
+                setCode: exportCardCode(existing),
+                quantity: 1,
+                unitPrice: existing.askingPrice,
+                card: existing.card,
+                forSale: existing.forSale,
+                askingPrice: existing.askingPrice,
+                note: existing.note,
+                binder: existing.binder,
+                page: existing.page,
+                slot: existing.slot,
+              },
+            ],
+            "sold-one",
+          );
+          if (nextQty < 1) {
+            const removed = await removeFromCollection(existing.id);
+            collectionNext = removed.collection;
+          } else {
+            const updated = await updateCollectionEntry(existing.id, {
+              quantity: nextQty,
+              finish: existing.finish,
+              card: existing.card,
+              forSale: existing.forSale,
+              condition: existing.condition,
+              askingPrice: existing.askingPrice,
+              note: existing.note,
+              binder: existing.binder,
+              page: existing.page,
+              slot: existing.slot,
+            });
+            collectionNext = updated.collection;
+          }
+          saved += 1;
+        } else {
+          const { collection: next } = await addToCollection(
+            cell.card,
+            1,
+            cell.finish,
+            {
+              binder: meta.binder,
+              page: meta.page,
+              slot: cell.slot,
+            },
+          );
+          collectionNext = next;
+          saved += 1;
+          setSessionAdds((n) => n + 1);
+        }
+      }
+      if (collectionNext) setCollection(collectionNext);
+      setLastAdd(null);
+      setStatus(
+        scanIntent === "audit"
+          ? `Audit −${saved} from page${batchMode ? " · ready for next page" : ""}`
+          : `Added ${saved} from page${
+              meta.page != null ? ` p${meta.page}` : ""
+            }${batchMode ? " · ready for next page" : ""}`,
+      );
+      if (batchMode) {
+        clearPageCells();
+        setSelected(null);
+        setResults([]);
+        setMatchScores({});
+        setCaptureWarnings([]);
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        setPreviewUrl(null);
+        setPhase("ready");
+        setBusy(false);
+        setSaving(false);
+      } else {
+        resetScan(true);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save page");
+      setSaving(false);
     }
   }
 
@@ -449,7 +601,8 @@ export function App() {
     setLastAdd(null);
   }
 
-  const confirming = Boolean(selected);
+  const pageDims = pageGridDims(pagePreset);
+  const confirming = Boolean(selected) || phase === "page";
 
   return (
     <div className={tab === "collection" ? "app app--collection" : "app"}>
@@ -564,6 +717,46 @@ export function App() {
                     Audit
                   </button>
                 </div>
+                <div className="scan__intent" role="group" aria-label="Capture layout">
+                  <button
+                    type="button"
+                    className={
+                      scanLayout === "card"
+                        ? "scan__intent-btn scan__intent-btn--active"
+                        : "scan__intent-btn"
+                    }
+                    onClick={() => setScanLayout("card")}
+                  >
+                    Card
+                  </button>
+                  <button
+                    type="button"
+                    className={
+                      scanLayout === "page"
+                        ? "scan__intent-btn scan__intent-btn--active"
+                        : "scan__intent-btn"
+                    }
+                    onClick={() => setScanLayout("page")}
+                    title="Snap a full binder page"
+                  >
+                    Page
+                  </button>
+                </div>
+                {scanLayout === "page" && (
+                  <label className="scan__grid-preset">
+                    <span className="sr-only">Page grid</span>
+                    <select
+                      value={pagePreset}
+                      onChange={(e) =>
+                        setPagePreset(e.target.value as PageGridPreset)
+                      }
+                      aria-label="Page grid size"
+                    >
+                      <option value="3x3">3×3</option>
+                      <option value="4x3">4×3</option>
+                    </select>
+                  </label>
+                )}
               </div>
             )}
 
@@ -572,6 +765,9 @@ export function App() {
               disabled={busy || !indexReady || confirming}
               keepAwake={tab === "scan"}
               collapsed={confirming}
+              captureMode={scanLayout}
+              pageRows={pageDims.rows}
+              pageCols={pageDims.cols}
             />
 
             {captureWarnings.length > 0 && (
@@ -583,7 +779,7 @@ export function App() {
               </div>
             )}
 
-            {previewUrl && !selected && (
+            {previewUrl && !selected && phase !== "page" && (
               <img
                 src={previewUrl}
                 alt="Last capture"
@@ -591,7 +787,20 @@ export function App() {
               />
             )}
 
-            {selected ? (
+            {phase === "page" ? (
+              <PageConfirmGrid
+                cells={pageCells}
+                onChange={setPageCells}
+                onSaveAll={(meta) => void handleSavePage(meta)}
+                onRetake={() => {
+                  clearPageCells();
+                  setPhase("ready");
+                  setStatus(null);
+                }}
+                saving={saving}
+                scanIntent={scanIntent}
+              />
+            ) : selected ? (
               <ScanConfirmSheet
                 card={selected}
                 quantity={quantity}
