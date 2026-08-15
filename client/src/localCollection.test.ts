@@ -3,6 +3,7 @@ import {
   addLocalCollection,
   bulkRemoveLocal,
   getLocalCollection,
+  importDecklistLocal,
   removeLocalCollection,
   updateLocalCollection,
 } from "./localCollection";
@@ -154,5 +155,20 @@ describe("localCollection edit/undo helpers", () => {
     expect(updated.entry.binder).toBe("Main");
     expect(updated.entry.page).toBe(3);
     expect(updated.entry.slot).toBeNull();
+  });
+
+  it("imports a decklist into a binder with absolute quantities", () => {
+    addLocalCollection(card, 2, "normal", { binder: "Trade" });
+    const result = importDecklistLocal(
+      [{ card, quantity: 4, section: "Main Deck" }],
+      "Obla",
+      "normal",
+    );
+    expect(result.imported).toBe(1);
+    expect(result.overwritten).toBe(1);
+    const entry = result.collection.entries[0];
+    expect(entry.binder).toBe("Obla");
+    expect(entry.quantity).toBe(4);
+    expect(entry.note).toBe("Main Deck");
   });
 });

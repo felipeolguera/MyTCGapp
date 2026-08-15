@@ -10,11 +10,13 @@ import {
   bulkRemoveLocal,
   bulkSetForSaleLocal,
   getLocalCollection,
+  importDecklistLocal,
   removeLocalCollection,
   replaceLocalCollection,
   updateLocalCollection,
   type AddCollectionMeta,
   type CollectionEntryPatch,
+  type DecklistImportItem,
 } from "./localCollection";
 import { searchCardIndex } from "./visualMatch";
 
@@ -169,4 +171,76 @@ export async function bulkRemoveFromCollection(
     }),
   );
   return data.collection;
+}
+
+/** Import a resolved decklist into a named binder (absolute qty per card). */
+export async function importDecklistToBinder(
+  items: DecklistImportItem[],
+  binder: string,
+  finish: CardFinish = "normal",
+): Promise<{
+  collection: CollectionSummary;
+  imported: number;
+  overwritten: number;
+}> {
+  if (isStandaloneMode()) {
+    return importDecklistLocal(items, binder, finish);
+  }
+
+  const binderLabel = binder.trim().slice(0, 40);
+  if (!binderLabel) throw new Error("Binder name is required");
+
+  const current = await fetchCollection();
+  const memory = new Map(current.entries.map((e) => [e.id, e] as const));
+  const mergedItems = new Map<
+    string,
+    { card: GaCardEdition; quantity: number; sections: string[] }
+  >();
+  for (const item of items) {
+    if (!Number.isInteger(item.quantity) || item.quantity < 1) continue;
+    const id = `${item.card.editionId}:${finish}`;
+    const prev = mergedItems.get(id);
+    const section = (item.section ?? "").trim();
+    if (prev) {
+      prev.quantity = Math.min(999, prev.quantity + item.quantity);
+      if (section && !prev.sections.includes(section)) prev.sections.push(section);
+    } else {
+      mergedItems.set(id, {
+        card: item.card,
+        quantity: Math.min(999, item.quantity),
+        sections: section ? [section] : [],
+      });
+    }
+  }
+  if (mergedItems.size === 0) throw new Error("No matched cards to import");
+
+  let overwrittenCount = 0;
+  const now = new Date().toISOString();
+  for (const [id, row] of mergedItems) {
+    const existing = memory.get(id);
+    if (existing) overwrittenCount += 1;
+    memory.set(id, {
+      id,
+      editionId: row.card.editionId,
+      finish,
+      quantity: row.quantity,
+      card: row.card,
+      updatedAt: now,
+      forSale: existing?.forSale ?? false,
+      condition: existing?.condition ?? "NM",
+      askingPrice: existing?.askingPrice ?? null,
+      note: row.sections.length
+        ? row.sections.join(" · ").slice(0, 280)
+        : (existing?.note ?? ""),
+      binder: binderLabel,
+      page: null,
+      slot: null,
+    });
+  }
+  const next = await restoreCollection([...memory.values()]);
+  return {
+    collection: next,
+    imported: mergedItems.size,
+    overwritten: overwrittenCount,
+  };
 }

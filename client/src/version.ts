@@ -1,3 +1,3 @@
 /** Displayed in-app (top right) and bumped with each APK ship. */
-export const APP_VERSION = "1.9.1";
-export const APP_VERSION_CODE = 32;
+export const APP_VERSION = "1.10.0";
+export const APP_VERSION_CODE = 34;

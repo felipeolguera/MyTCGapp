@@ -348,3 +348,96 @@ export function bulkRemoveLocal(ids: string[]): CollectionSummary {
 export function findLocalEntry(id: string): CollectionEntry | undefined {
   return readEntries().find((e) => e.id === id);
 }
+
+export interface DecklistImportItem {
+  card: GaCardEdition;
+  quantity: number;
+  /** Section label stored in note (e.g. Main Deck). */
+  section?: string;
+}
+
+/**
+ * Import a resolved decklist into a binder.
+ * Sets absolute quantity per edition+finish and assigns the binder label.
+ * Same printing from multiple sections is summed into one line.
+ */
+export function importDecklistLocal(
+  items: DecklistImportItem[],
+  binder: string,
+  finish: CardFinish = "normal",
+): {
+  collection: CollectionSummary;
+  imported: number;
+  overwritten: number;
+} {
+  const binderLabel = normalizeBinderLabel(binder);
+  if (!binderLabel) {
+    throw new Error("Binder name is required");
+  }
+  if (items.length === 0) {
+    throw new Error("No matched cards to import");
+  }
+
+  const merged = new Map<
+    string,
+    { card: GaCardEdition; quantity: number; sections: string[] }
+  >();
+  for (const item of items) {
+    if (!Number.isInteger(item.quantity) || item.quantity < 1) continue;
+    const id = collectionEntryId(item.card.editionId, finish);
+    const prev = merged.get(id);
+    const section = (item.section ?? "").trim();
+    if (prev) {
+      prev.quantity = Math.min(999, prev.quantity + item.quantity);
+      if (section && !prev.sections.includes(section)) {
+        prev.sections.push(section);
+      }
+    } else {
+      merged.set(id, {
+        card: item.card,
+        quantity: Math.min(999, item.quantity),
+        sections: section ? [section] : [],
+      });
+    }
+  }
+
+  if (merged.size === 0) {
+    throw new Error("No matched cards to import");
+  }
+
+  const entries = readEntries();
+  const byId = new Map(entries.map((e) => [e.id, e]));
+  let overwritten = 0;
+  const now = new Date().toISOString();
+
+  for (const [id, row] of merged) {
+    const existing = byId.get(id);
+    if (existing) overwritten += 1;
+    const note = row.sections.length
+      ? row.sections.join(" · ").slice(0, 280)
+      : (existing?.note ?? "");
+    byId.set(id, {
+      id,
+      editionId: row.card.editionId,
+      finish,
+      quantity: row.quantity,
+      card: row.card,
+      updatedAt: now,
+      forSale: existing?.forSale ?? false,
+      condition: existing?.condition ?? "NM",
+      askingPrice: existing?.askingPrice ?? null,
+      note,
+      binder: binderLabel,
+      page: null,
+      slot: null,
+    });
+  }
+
+  const next = [...byId.values()];
+  writeEntries(next);
+  return {
+    collection: summarize(next),
+    imported: merged.size,
+    overwritten,
+  };
+}
