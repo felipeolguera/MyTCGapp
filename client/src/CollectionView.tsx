@@ -77,6 +77,9 @@ import {
 } from "./salesLedger";
 import { exportCardCode } from "./exportCollection";
 import { marketTimesPercent, parseAskPercent } from "./sellPricing";
+import { DecklistImportPanel } from "./DecklistImportPanel";
+import { importDecklistToBinder } from "./api";
+import type { DecklistResolveResult } from "./decklistResolve";
 
 interface CollectionViewProps {
   collection: CollectionSummary | null;
@@ -103,6 +106,7 @@ interface CollectionViewProps {
   onBulkDelete: (ids: string[]) => Promise<void>;
   onRestore: (entries: CollectionEntry[]) => Promise<void>;
   onBulkSetForSale: (ids: string[], forSale: boolean) => Promise<void>;
+  onImportedDecklist?: (binder: string) => void;
 }
 
 export function CollectionView({
@@ -116,6 +120,7 @@ export function CollectionView({
   onBulkDelete,
   onRestore,
   onBulkSetForSale,
+  onImportedDecklist,
 }: CollectionViewProps) {
   const [index, setIndex] = useState<PriceIndex | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -158,6 +163,8 @@ export function CollectionView({
   const [showMovers, setShowMovers] = useState(false);
   const [showTools, setShowTools] = useState(false);
   const [showSell, setShowSell] = useState(false);
+  const [showDeckImport, setShowDeckImport] = useState(false);
+  const [importingDeck, setImportingDeck] = useState(false);
   const [canUndo, setCanUndo] = useState(() => {
     const last = peekLastSale();
     return Boolean(last && canUndoSale(last));
@@ -920,11 +927,56 @@ export function CollectionView({
     }
   }
 
+  async function handleImportDecklist(payload: {
+    binder: string;
+    finish: "normal" | "foil";
+    resolved: DecklistResolveResult;
+  }) {
+    onError?.(null);
+    const items = payload.resolved.lines
+      .filter((l) => l.card)
+      .map((l) => ({
+        card: l.card!,
+        quantity: l.source.quantity,
+        section: l.source.section,
+      }));
+    if (items.length === 0) {
+      onError?.("No matched cards to import");
+      return;
+    }
+    const ok = window.confirm(
+      `Import ${items.length} cards into binder “${payload.binder}”? ` +
+        `Matching lines already in your collection will move into this binder and use the list quantities.`,
+    );
+    if (!ok) return;
+    setImportingDeck(true);
+    try {
+      const result = await importDecklistToBinder(
+        items,
+        payload.binder,
+        payload.finish,
+      );
+      onRefresh();
+      setBinderFilter(payload.binder);
+      setShowDeckImport(false);
+      setShowTools(false);
+      onImportedDecklist?.(payload.binder);
+      onStatus?.(
+        `Imported ${result.imported} into “${payload.binder}”` +
+          (result.overwritten ? ` · ${result.overwritten} updated` : ""),
+      );
+    } catch (err) {
+      onError?.(err instanceof Error ? err.message : "Decklist import failed");
+    } finally {
+      setImportingDeck(false);
+    }
+  }
+
   if (loading && !collection) {
     return <p className="muted">Loading collection…</p>;
   }
 
-  if (!collection || collection.entries.length === 0) {
+  if ((!collection || collection.entries.length === 0) && !showDeckImport) {
     return (
       <div className="empty">
         <h2>No cards yet</h2>
@@ -940,9 +992,31 @@ export function CollectionView({
           >
             Restore backup
           </button>
+          <button
+            type="button"
+            className="btn btn--primary"
+            onClick={() => setShowDeckImport(true)}
+          >
+            Import decklist
+          </button>
         </div>
       </div>
     );
+  }
+
+  if (showDeckImport && (!collection || collection.entries.length === 0)) {
+    return (
+      <DecklistImportPanel
+        priceIndex={index}
+        busy={importingDeck}
+        onCancel={() => setShowDeckImport(false)}
+        onImport={handleImportDecklist}
+      />
+    );
+  }
+
+  if (!collection) {
+    return <p className="muted">Loading collection…</p>;
   }
 
   return (
@@ -964,7 +1038,11 @@ export function CollectionView({
           <span className="muted">
             {" "}
             · {collection.totalCards} cards · {collection.uniqueCards} unique
-            {index ? ` · ~${formatUsd(totalValue)}` : ""}
+            {binderFilter !== "all"
+              ? ` · ${binderFilter} ~${formatUsd(visibleAskingTotal)}`
+              : index
+                ? ` · ~${formatUsd(totalValue)}`
+                : ""}
             {filtered ? ` · showing ${visibleCards}` : ""}
           </span>
         </p>
@@ -979,7 +1057,10 @@ export function CollectionView({
             aria-expanded={showTools}
             onClick={() => {
               setShowTools((v) => !v);
-              if (!showTools) setShowSell(false);
+              if (!showTools) {
+                setShowSell(false);
+                setShowDeckImport(false);
+              }
             }}
           >
             Tools
@@ -1063,8 +1144,27 @@ export function CollectionView({
             >
               Restore
             </button>
+            <button
+              type="button"
+              className="btn btn--ghost btn--compact"
+              onClick={() => {
+                setShowDeckImport(true);
+                setShowTools(false);
+              }}
+            >
+              Import list
+            </button>
           </div>
         </div>
+      )}
+
+      {showDeckImport && (
+        <DecklistImportPanel
+          priceIndex={index}
+          busy={importingDeck}
+          onCancel={() => setShowDeckImport(false)}
+          onImport={handleImportDecklist}
+        />
       )}
 
       {backupReminder && (
