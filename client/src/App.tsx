@@ -23,6 +23,7 @@ import {
   type SearchSuggestion,
 } from "./searchSuggest";
 import { loadCardIndex, matchCardVisually } from "./visualMatch";
+import { warmNameOcr } from "./nameOcr";
 import {
   matchPagePhoto,
   pageGridDims,
@@ -115,6 +116,7 @@ export function App() {
       .then((idx) => {
         setIndexReady(true);
         setStatus(`Visual index ready (${idx.total} printings)`);
+        warmNameOcr();
       })
       .catch(() => {
         setIndexReady(false);

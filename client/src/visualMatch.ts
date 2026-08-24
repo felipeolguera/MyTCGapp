@@ -5,6 +5,8 @@ import {
   hashesFromRgba,
   type Hash64,
 } from "./phash";
+import { nameSimilarity, rankNamesByOcr } from "./nameMatch";
+import { ocrCardName } from "./nameOcr";
 
 export interface IndexedCard extends GaCardEdition {
   dHash: Hash64;
@@ -23,6 +25,8 @@ export interface VisualMatch {
   card: GaCardEdition;
   distance: number;
   score: number;
+  /** Optional OCR name similarity 0–1 when name-band OCR ran. */
+  nameScore?: number;
 }
 
 let cachedIndex: CardIndex | null = null;
@@ -110,15 +114,108 @@ function toEdition(card: IndexedCard): GaCardEdition {
 }
 
 /**
+ * Fuse perceptual hashes with top-name-band OCR.
+ * OCR only looks at the name plate — not rules text.
+ */
+export function fuseVisualAndNameMatches(
+  visual: VisualMatch[],
+  ocrName: string,
+  nameCards: GaCardEdition[],
+  limit: number,
+): VisualMatch[] {
+  const ocr = ocrName.trim();
+  const byEdition = new Map<string, VisualMatch>();
+
+  function consider(row: VisualMatch) {
+    const existing = byEdition.get(row.card.editionId);
+    if (!existing || row.score > existing.score) {
+      byEdition.set(row.card.editionId, row);
+    }
+  }
+
+  for (const row of visual) {
+    const nameScore = ocr ? nameSimilarity(ocr, row.card.name) : 0;
+    const score = ocr
+      ? Math.min(1, row.score * 0.42 + nameScore * 0.58)
+      : row.score;
+    consider({
+      ...row,
+      score,
+      nameScore: ocr ? nameScore : undefined,
+      distance: Math.round((1 - score) * 72),
+    });
+  }
+
+  if (ocr.length >= 3) {
+    for (const card of nameCards) {
+      const nameScore = nameSimilarity(ocr, card.name);
+      if (nameScore < 0.62) continue;
+      const existing = byEdition.get(card.editionId);
+      const visualScore = existing?.score ?? 0.35;
+      const score = Math.min(1, visualScore * 0.35 + nameScore * 0.65);
+      consider({
+        card,
+        score,
+        nameScore,
+        distance: Math.round((1 - score) * 72),
+      });
+    }
+  }
+
+  return [...byEdition.values()]
+    .sort(
+      (a, b) =>
+        b.score - a.score ||
+        a.card.name.localeCompare(b.card.name) ||
+        a.card.setPrefix.localeCompare(b.card.setPrefix),
+    )
+    .slice(0, limit);
+}
+
+/**
  * Match a snapped card photo against the precomputed GA image index.
- * Returns best visual matches (lower distance = better).
+ * Uses art hashes + OCR of the top name band.
  */
 export async function matchCardVisually(
   photo: Blob,
-  opts: { limit?: number; maxDistance?: number } = {},
+  opts: { limit?: number; maxDistance?: number; useOcr?: boolean } = {},
 ): Promise<VisualMatch[]> {
+  const limit = opts.limit ?? 5;
+  const useOcr = opts.useOcr !== false;
   const { data, width, height } = await blobToRgba(photo);
-  return matchRgbaVisually(data, width, height, opts);
+
+  const visualPromise = matchRgbaVisually(data, width, height, {
+    limit: Math.max(limit, 16),
+    maxDistance: opts.maxDistance ?? 42,
+  });
+
+  if (!useOcr) {
+    return (await visualPromise).slice(0, limit);
+  }
+
+  // OCR is optional and non-blocking: if the worker isn't ready / times out,
+  // we keep the visual ranking so the UI never sticks on "Matching…".
+  const [visual, ocrName] = await Promise.all([
+    visualPromise,
+    ocrCardName(photo).catch(() => ""),
+  ]);
+
+  if (!ocrName.trim()) {
+    return visual.slice(0, limit);
+  }
+
+  const index = await loadCardIndex();
+  const uniqueNames = [...new Set(index.cards.map((c) => c.name))];
+  const rankedNames = rankNamesByOcr(ocrName, uniqueNames, {
+    minScore: 0.58,
+    limit: 6,
+  });
+  const wanted = new Set(rankedNames.map((r) => r.name));
+  const nameCards = index.cards
+    .filter((c) => wanted.has(c.name))
+    .map(toEdition);
+
+  return fuseVisualAndNameMatches(visual, ocrName, nameCards, limit);
 }
 
 /** Match pre-decoded RGBA (used by page-grid cell crops). */
@@ -149,7 +246,6 @@ export async function matchRgbaVisually(
       a.distance - b.distance || a.card.name.localeCompare(b.card.name),
   );
 
-  // Keep distinct printings (editionId) so reprints/set variants stay pickable.
   const byEdition = new Map<string, VisualMatch>();
   for (const row of ranked) {
     const existing = byEdition.get(row.card.editionId);
@@ -170,7 +266,6 @@ export function shouldAutoConfirm(matches: VisualMatch[]): boolean {
   if (best.score < 0.78) return false;
   if (matches.length === 1) return true;
   const second = matches[1];
-  // Same art, different set — force a pick.
   if (
     best.card.cardId === second.card.cardId &&
     best.score - second.score < 0.08
@@ -222,7 +317,6 @@ export async function searchCardIndex(
       a.card.setPrefix.localeCompare(b.card.setPrefix),
   );
 
-  // Distinct printings — sellers often need the right set, not just the name.
   const seen = new Set<string>();
   const out: GaCardEdition[] = [];
   for (const hit of hits) {
