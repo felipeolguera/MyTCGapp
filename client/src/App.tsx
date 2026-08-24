@@ -11,6 +11,7 @@ import {
 } from "./api";
 import { CameraCapture, type CapturePayload } from "./CameraCapture";
 import { ScanConfirmSheet, type ScanIntent } from "./ScanConfirmSheet";
+import { MatchChoicePopup } from "./MatchChoicePopup";
 import {
   PageConfirmGrid,
   type PageConfirmSaveMeta,
@@ -21,7 +22,7 @@ import {
   suggestionsFromCards,
   type SearchSuggestion,
 } from "./searchSuggest";
-import { loadCardIndex, matchCardVisually, shouldAutoConfirm } from "./visualMatch";
+import { loadCardIndex, matchCardVisually } from "./visualMatch";
 import {
   matchPagePhoto,
   pageGridDims,
@@ -39,10 +40,17 @@ import type {
   ScanPhase,
   TabId,
 } from "./types";
-import { collectionEntryId, finishLabel } from "./types";
+import {
+  collectionEntryId,
+  finishLabel,
+  normalizeBinderLabel,
+  normalizeBinderPage,
+  normalizeBinderSlot,
+} from "./types";
 import { APP_VERSION } from "./version";
 import { exportCardCode } from "./exportCollection";
 import { recordSale } from "./salesLedger";
+import { readGeoDefaults, rememberGeoAfterSave } from "./binderGeoDefaults";
 
 interface LastAdd {
   entryId: string;
@@ -78,6 +86,10 @@ export function App() {
   const [scanLayout, setScanLayout] = useState<"card" | "page">("card");
   const [pagePreset, setPagePreset] = useState<PageGridPreset>("3x3");
   const [pageCells, setPageCells] = useState<PageScanCell[]>([]);
+  const [addFlash, setAddFlash] = useState<{
+    name: string;
+    kind: "added" | "audit";
+  } | null>(null);
   const [nameSuggestions, setNameSuggestions] = useState<SearchSuggestion[]>(
     [],
   );
@@ -109,6 +121,20 @@ export function App() {
         setStatus("Visual index unavailable — use name search");
       });
   }, []);
+
+  // Status toasts auto-clear after 2s (errors stay until dismissed).
+  useEffect(() => {
+    if (!status || error) return;
+    const handle = window.setTimeout(() => setStatus(null), 2000);
+    return () => window.clearTimeout(handle);
+  }, [status, error]);
+
+  // Centered “[Name] Added” flash after a quick pick.
+  useEffect(() => {
+    if (!addFlash) return;
+    const handle = window.setTimeout(() => setAddFlash(null), 1600);
+    return () => window.clearTimeout(handle);
+  }, [addFlash]);
 
   useEffect(() => {
     if (selected || tab !== "scan") {
@@ -176,30 +202,122 @@ export function App() {
     setResults(cards);
     setQuantity("1");
     setFinish("normal");
+    setSelected(null);
 
     if (cards.length === 0) {
-      setSelected(null);
-      setPhase("results");
+      setPhase("ready");
       setStatus("No visual match — try a flatter photo or search by name");
       return;
     }
 
     setQuery(cards[0].name);
-    const best = matches[0];
-    if (shouldAutoConfirm(matches)) {
-      setSelected(cards[0]);
-      setPhase("detail");
-      setStatus(
-        `Likely “${cards[0].name}” (${Math.round(best.score * 100)}%) — confirm or Wrong`,
-      );
-      return;
-    }
-
-    setSelected(null);
     setPhase("results");
     setStatus(
-      `Top ${cards.length} match${cards.length === 1 ? "" : "es"} — confirm “${cards[0].name}” (${Math.round(best.score * 100)}%)`,
+      `Top ${cards.length} match${cards.length === 1 ? "" : "es"} — tap to add`,
     );
+  }
+
+  async function handleQuickPick(card: GaCardEdition, finishPick: CardFinish = "normal") {
+    setSaving(true);
+    setError(null);
+    try {
+      if (scanIntent === "audit") {
+        const entryId = collectionEntryId(card.editionId, finishPick);
+        const existing = collection?.entries.find((e) => e.id === entryId);
+        if (!existing) {
+          throw new Error("Not in binder — switch finish or Add mode");
+        }
+        const nextQty = existing.quantity - 1;
+        recordSale(
+          [
+            {
+              entryId: existing.id,
+              name: existing.card.name,
+              finish: existing.finish,
+              condition: existing.condition,
+              setCode: exportCardCode(existing),
+              quantity: 1,
+              unitPrice: existing.askingPrice,
+              card: existing.card,
+              forSale: existing.forSale,
+              askingPrice: existing.askingPrice,
+              note: existing.note,
+              binder: existing.binder,
+              page: existing.page,
+              slot: existing.slot,
+            },
+          ],
+          "sold-one",
+        );
+        const { collection: next } =
+          nextQty < 1
+            ? await removeFromCollection(existing.id).then((r) => ({
+                collection: r.collection,
+              }))
+            : await updateCollectionEntry(existing.id, {
+                quantity: nextQty,
+                finish: existing.finish,
+                card: existing.card,
+                forSale: existing.forSale,
+                condition: existing.condition,
+                askingPrice: existing.askingPrice,
+                note: existing.note,
+                binder: existing.binder,
+                page: existing.page,
+                slot: existing.slot,
+              });
+        setCollection(next);
+        setLastAdd(null);
+        setAddFlash({ name: card.name, kind: "audit" });
+        setStatus(
+          `Audit −1 ${card.name} (${finishLabel(finishPick)})${
+            nextQty < 1 ? " · removed" : ` · left ×${nextQty}`
+          }`,
+        );
+      } else {
+        const geo = readGeoDefaults();
+        const binder = normalizeBinderLabel(geo.binder);
+        const page = normalizeBinderPage(geo.page);
+        const slot = normalizeBinderSlot(geo.slot);
+        const { entry, collection: next, previousQuantity } =
+          await addToCollection(card, 1, finishPick, {
+            binder,
+            page,
+            slot,
+          });
+        rememberGeoAfterSave({
+          binder: geo.binder,
+          page: geo.page,
+          slot: geo.slot,
+          advanceSlot: geo.advanceSlot,
+        });
+        setCollection(next);
+        setSessionAdds((n) => n + 1);
+        setLastAdd({
+          entryId: entry.id,
+          card,
+          finish: finishPick,
+          addedQty: 1,
+          previousQuantity,
+        });
+        setAddFlash({ name: card.name, kind: "added" });
+        setStatus(
+          `Added ×1 ${card.name} (${finishLabel(finishPick)}) · ready for next snap`,
+        );
+      }
+      setResults([]);
+      setMatchScores({});
+      setSelected(null);
+      setCaptureWarnings([]);
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+      setPhase("ready");
+      setBusy(false);
+      setSaving(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save");
+      setSaving(false);
+    }
   }
 
   function pickNameSuggestion(item: SearchSuggestion) {
@@ -207,11 +325,7 @@ export function App() {
     setQuery(item.primary);
     setNameSuggestions([]);
     if (card) {
-      setSelected(card);
-      setQuantity("1");
-      setFinish("normal");
-      setPhase("detail");
-      setStatus(`Confirm ${card.name}`);
+      void handleQuickPick(card);
       return;
     }
     void runSearch(item.primary);
@@ -243,7 +357,7 @@ export function App() {
       setPhase("results");
       setStatus(
         unique.length
-          ? `${unique.length} card${unique.length === 1 ? "" : "s"} found — tap to confirm`
+          ? `${unique.length} card${unique.length === 1 ? "" : "s"} found — tap to add`
           : "No matches — try another name",
       );
     } catch (err) {
@@ -602,7 +716,54 @@ export function App() {
   }
 
   const pageDims = pageGridDims(pagePreset);
-  const confirming = Boolean(selected) || phase === "page";
+  const confirming = phase === "page";
+  const showCardChoices =
+    scanLayout === "card" &&
+    phase === "results" &&
+    results.length > 0 &&
+    !selected;
+  const cameraOverlay =
+    addFlash ? (
+      <div
+        className="camera__match-overlay camera__flash"
+        role="status"
+        aria-live="polite"
+      >
+        <div
+          className={
+            addFlash.kind === "audit"
+              ? "camera__flash-card camera__flash-card--audit"
+              : "camera__flash-card"
+          }
+          key={`${addFlash.kind}:${addFlash.name}`}
+        >
+          <span className="camera__flash-name">{addFlash.name}</span>
+          <span className="camera__flash-verb">
+            {addFlash.kind === "audit" ? "Removed" : "Added"}
+          </span>
+        </div>
+      </div>
+    ) : scanLayout === "card" && phase === "recognizing" ? (
+      <div className="camera__match-overlay camera__match-overlay--busy">
+        Matching…
+      </div>
+    ) : showCardChoices ? (
+      <MatchChoicePopup
+        cards={results}
+        scores={matchScores}
+        busy={saving}
+        onPick={(card) => void handleQuickPick(card)}
+        onDismiss={() => {
+          setResults([]);
+          setMatchScores({});
+          setCaptureWarnings([]);
+          setPhase("ready");
+          setStatus(null);
+          if (previewUrl) URL.revokeObjectURL(previewUrl);
+          setPreviewUrl(null);
+        }}
+      />
+    ) : null;
 
   return (
     <div className={tab === "collection" ? "app app--collection" : "app"}>
@@ -761,29 +922,22 @@ export function App() {
 
             <CameraCapture
               onCapture={(payload) => void handleCapture(payload)}
-              disabled={busy || !indexReady || confirming}
+              disabled={busy || !indexReady || confirming || Boolean(cameraOverlay)}
               keepAwake={tab === "scan"}
               collapsed={confirming}
               captureMode={scanLayout}
               pageRows={pageDims.rows}
               pageCols={pageDims.cols}
+              overlay={cameraOverlay}
             />
 
-            {captureWarnings.length > 0 && (
+            {captureWarnings.length > 0 && !cameraOverlay && (
               <div className="banner banner--warn" role="status">
                 {captureWarnings[0]}
                 {captureWarnings.length > 1
                   ? ` · ${captureWarnings[1]}`
                   : ""}
               </div>
-            )}
-
-            {previewUrl && !selected && phase !== "page" && (
-              <img
-                src={previewUrl}
-                alt="Last capture"
-                className="scan__preview"
-              />
             )}
 
             {phase === "page" ? (
@@ -846,78 +1000,22 @@ export function App() {
                       suggestions={nameSuggestions}
                       onPick={pickNameSuggestion}
                       placeholder="e.g. Spirit of Slime"
-                      disabled={busy}
+                      disabled={busy || saving}
                       minChars={2}
                       aria-label="Search card name"
                     />
                     <button
                       type="submit"
                       className="btn btn--primary"
-                      disabled={busy}
+                      disabled={busy || saving}
                     >
                       Search
                     </button>
                   </div>
                 </form>
 
-                {phase === "recognizing" && (
-                  <p className="muted pulse">Matching card art…</p>
-                )}
-
-                {phase === "results" && (
-                  <>
-                    <ul className="results">
-                      {results.map((card, idx) => (
-                        <li key={card.editionId}>
-                          <button
-                            type="button"
-                            className={
-                              idx === 0 ? "result result--best" : "result"
-                            }
-                            onClick={() => {
-                              setSelected(card);
-                              setQuantity("1");
-                              setFinish("normal");
-                              setPhase("detail");
-                              setStatus(`Confirm ${card.name}`);
-                            }}
-                          >
-                            <img src={card.imageUrl} alt="" loading="lazy" />
-                            <span>
-                              <strong>
-                                {idx === 0 ? "Best · " : ""}
-                                {card.name}
-                              </strong>
-                              <small>
-                                {card.setPrefix} #{card.collectorNumber}
-                                {card.setName ? ` · ${card.setName}` : ""}
-                                {matchScores[card.editionId] != null
-                                  ? ` · ${Math.round(matchScores[card.editionId] * 100)}%`
-                                  : ""}
-                              </small>
-                            </span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                    {results.length > 0 && (
-                      <button
-                        type="button"
-                        className="btn btn--ghost"
-                        onClick={() => {
-                          setResults([]);
-                          setMatchScores({});
-                          setCaptureWarnings([]);
-                          setPhase("ready");
-                          setStatus(
-                            "None matched — retake with even lighting or search by name",
-                          );
-                        }}
-                      >
-                        None of these
-                      </button>
-                    )}
-                  </>
+                {scanLayout === "page" && phase === "recognizing" && (
+                  <p className="muted pulse">Matching page…</p>
                 )}
               </>
             )}
