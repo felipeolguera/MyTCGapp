@@ -280,6 +280,7 @@ export function DeckBuilderView({
           placeholder={activeMeta.searchHint}
           aria-label={`${activeMeta.label} search`}
           minChars={1}
+          dropdown="below"
         />
         {activeSection === "material" && (
           <p className="muted deck-builder__filter-hint">
