@@ -19,6 +19,10 @@ import {
   type DecklistImportItem,
 } from "./localCollection";
 import { searchCardIndex } from "./visualMatch";
+import {
+  cardAllowedInSection,
+  type DeckSectionId,
+} from "./deckSections";
 
 /** Native/APK builds talk to GATCG + localStorage; web/dev can use the Express API. */
 export function isStandaloneMode(): boolean {
@@ -49,6 +53,27 @@ export async function searchCards(name: string): Promise<GaCardEdition[]> {
     await fetch(`/api/ga/search?name=${encodeURIComponent(name)}`),
   );
   return data.cards;
+}
+
+/** Section-aware search for the deck builder (Material = champions/regalia). */
+export async function searchCardsForDeckSection(
+  name: string,
+  section: DeckSectionId,
+  limit = 12,
+): Promise<GaCardEdition[]> {
+  try {
+    const local = await searchCardIndex(name, limit * 3, {
+      filter: (card) => cardAllowedInSection(card, section),
+    });
+    if (local.length > 0) return local.slice(0, limit);
+  } catch {
+    // fall through
+  }
+
+  const broad = await searchCards(name);
+  return broad
+    .filter((card) => cardAllowedInSection(card, section))
+    .slice(0, limit);
 }
 
 export async function fetchCollection(): Promise<CollectionSummary> {

@@ -286,6 +286,7 @@ function normalizeSearchText(value: string): string {
 export async function searchCardIndex(
   query: string,
   limit = 20,
+  opts: { filter?: (card: IndexedCard) => boolean } = {},
 ): Promise<GaCardEdition[]> {
   const q = normalizeSearchText(query);
   if (!q) return [];
@@ -294,6 +295,7 @@ export async function searchCardIndex(
   type Hit = { card: IndexedCard; rank: number };
   const hits: Hit[] = [];
   for (const card of index.cards) {
+    if (opts.filter && !opts.filter(card)) continue;
     const name = normalizeSearchText(card.name);
     const prefix = normalizeSearchText(card.setPrefix);
     const num = normalizeSearchText(card.collectorNumber);
