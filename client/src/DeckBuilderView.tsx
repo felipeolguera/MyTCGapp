@@ -3,7 +3,6 @@ import {
   importDecklistToBinder,
   searchCardsForDeckSection,
 } from "./api";
-import { SearchAutocomplete } from "./SearchAutocomplete";
 import {
   DECK_SECTIONS,
   deckCardTypeBadge,
@@ -17,7 +16,6 @@ import {
   lookupCardPrice,
   type PriceIndex,
 } from "./prices";
-import type { SearchSuggestion } from "./searchSuggest";
 import type { GaCardEdition } from "./types";
 
 interface DeckLine {
@@ -33,6 +31,7 @@ interface DeckBuilderViewProps {
 }
 
 const STORAGE_KEY = "archive-binder.deck-draft.v1";
+const SEARCH_LIMIT = 15;
 
 function loadDraft(): { name: string; lines: DeckLine[] } {
   try {
@@ -59,8 +58,8 @@ export function DeckBuilderView({
   const [activeSection, setActiveSection] =
     useState<DeckSectionId>("material");
   const [query, setQuery] = useState("");
-  const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
-  const [suggestionCards, setSuggestionCards] = useState<GaCardEdition[]>([]);
+  const [hits, setHits] = useState<GaCardEdition[]>([]);
+  const [searching, setSearching] = useState(false);
   const [priceIndex, setPriceIndex] = useState<PriceIndex | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -71,32 +70,26 @@ export function DeckBuilderView({
   }, []);
 
   useEffect(() => {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ name, lines }),
-    );
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ name, lines }));
   }, [name, lines]);
 
   useEffect(() => {
     const q = query.trim();
     if (q.length < 1) {
-      setSuggestions([]);
-      setSuggestionCards([]);
+      setHits([]);
+      setSearching(false);
       return;
     }
     let cancelled = false;
+    setSearching(true);
     const handle = window.setTimeout(() => {
-      void searchCardsForDeckSection(q, activeSection, 10).then((cards) => {
-        if (cancelled) return;
-        setSuggestionCards(cards);
-        setSuggestions(
-          cards.map((card) => ({
-            id: card.editionId,
-            primary: card.name,
-            secondary: `${deckCardTypeBadge(card)} · ${card.setPrefix} ${card.collectorNumber}`,
-          })),
-        );
-      });
+      void searchCardsForDeckSection(q, activeSection, SEARCH_LIMIT).then(
+        (cards) => {
+          if (cancelled) return;
+          setHits(cards);
+          setSearching(false);
+        },
+      );
     }, 120);
     return () => {
       cancelled = true;
@@ -148,21 +141,10 @@ export function DeckBuilderView({
           l === existing ? { ...l, quantity: l.quantity + 1 } : l,
         );
       }
-      return [
-        ...prev,
-        { card, quantity: 1, section: activeSection },
-      ];
+      return [...prev, { card, quantity: 1, section: activeSection }];
     });
     setQuery("");
-    setSuggestions([]);
-    setSuggestionCards([]);
-  }
-
-  function pickSuggestion(item: SearchSuggestion) {
-    const card =
-      suggestionCards.find((c) => c.editionId === item.id) ??
-      suggestionCards.find((c) => c.name === item.primary);
-    if (card) addCard(card);
+    setHits([]);
   }
 
   function bump(line: DeckLine, delta: number) {
@@ -216,6 +198,7 @@ export function DeckBuilderView({
   }
 
   const activeMeta = DECK_SECTIONS.find((s) => s.id === activeSection)!;
+  const showHits = query.trim().length >= 1;
 
   return (
     <section className="deck-builder">
@@ -261,7 +244,7 @@ export function DeckBuilderView({
               onClick={() => {
                 setActiveSection(section.id);
                 setQuery("");
-                setSuggestions([]);
+                setHits([]);
               }}
             >
               {section.label}
@@ -272,20 +255,56 @@ export function DeckBuilderView({
       </div>
 
       <div className="deck-builder__search">
-        <SearchAutocomplete
-          value={query}
-          onChange={setQuery}
-          suggestions={suggestions}
-          onPick={pickSuggestion}
-          placeholder={activeMeta.searchHint}
-          aria-label={`${activeMeta.label} search`}
-          minChars={1}
-          dropdown="below"
-        />
+        <label className="deck-builder__search-field">
+          <span className="visually-hidden">{activeMeta.label} search</span>
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={activeMeta.searchHint}
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            enterKeyHint="search"
+          />
+        </label>
         {activeSection === "material" && (
           <p className="muted deck-builder__filter-hint">
             Showing champions &amp; regalia only
           </p>
+        )}
+        {showHits && (
+          <div
+            className="deck-builder__hits"
+            role="listbox"
+            aria-label="Search results"
+          >
+            {searching && hits.length === 0 ? (
+              <p className="muted deck-builder__hits-empty">Searching…</p>
+            ) : hits.length === 0 ? (
+              <p className="muted deck-builder__hits-empty">No matches</p>
+            ) : (
+              <ul className="deck-builder__hit-grid">
+                {hits.map((card) => (
+                  <li key={card.editionId}>
+                    <button
+                      type="button"
+                      className="deck-builder__hit"
+                      onClick={() => addCard(card)}
+                      title={`${card.name} · ${deckCardTypeBadge(card)}`}
+                    >
+                      <img
+                        src={card.imageUrl}
+                        alt={card.name}
+                        loading="lazy"
+                      />
+                      <span className="deck-builder__hit-name">{card.name}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
       </div>
 
