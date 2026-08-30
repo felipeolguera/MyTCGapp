@@ -65,7 +65,7 @@ export interface CollectionSummary {
   uniqueCards: number;
 }
 
-export type TabId = "scan" | "collection";
+export type TabId = "scan" | "collection" | "decks";
 
 export type ScanPhase =
   | "ready"

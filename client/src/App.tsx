@@ -17,6 +17,7 @@ import {
   type PageConfirmSaveMeta,
 } from "./PageConfirmGrid";
 import { CollectionView } from "./CollectionView";
+import { DeckBuilderView } from "./DeckBuilderView";
 import { SearchAutocomplete } from "./SearchAutocomplete";
 import {
   suggestionsFromCards,
@@ -768,8 +769,12 @@ export function App() {
     ) : null;
 
   return (
-    <div className={tab === "collection" ? "app app--collection" : "app"}>
-      {tab === "collection" && (
+    <div
+      className={
+        tab === "collection" || tab === "decks" ? "app app--collection" : "app"
+      }
+    >
+      {(tab === "collection" || tab === "decks") && (
         <header className="topbar topbar--compact">
           <div className="topbar__brand">
             <img
@@ -1036,6 +1041,23 @@ export function App() {
             onBulkDelete={handleBulkDelete}
             onRestore={handleRestoreCollection}
             onBulkSetForSale={handleBulkSetForSale}
+            onImportedDecklist={(binder) => {
+              setTab("collection");
+              void refreshCollection();
+              setStatus(`Imported into “${binder}”`);
+            }}
+          />
+        )}
+
+        {tab === "decks" && (
+          <DeckBuilderView
+            onStatus={setStatus}
+            onError={setError}
+            onSavedToBinder={(binder) => {
+              void refreshCollection();
+              setTab("collection");
+              setStatus(`Deck saved to binder “${binder}”`);
+            }}
           />
         )}
 
@@ -1056,6 +1078,13 @@ export function App() {
             }}
           >
             Collection
+          </button>
+          <button
+            type="button"
+            className={tab === "decks" ? "tab tab--active" : "tab"}
+            onClick={() => setTab("decks")}
+          >
+            Decks
           </button>
         </nav>
         </div>

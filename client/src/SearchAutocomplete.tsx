@@ -14,6 +14,8 @@ interface SearchAutocompleteProps {
   className?: string;
   inputClassName?: string;
   minChars?: number;
+  /** Collection toolbar opens upward (above keyboard); decks opens downward. */
+  dropdown?: "above" | "below";
 }
 
 export function SearchAutocomplete({
@@ -29,6 +31,7 @@ export function SearchAutocomplete({
   className,
   inputClassName,
   minChars = 1,
+  dropdown = "above",
 }: SearchAutocompleteProps) {
   const autoId = useId();
   const inputId = id ?? autoId;
@@ -105,7 +108,11 @@ export function SearchAutocomplete({
       {show && (
         <ul
           id={listId}
-          className="search-autocomplete__list"
+          className={
+            dropdown === "below"
+              ? "search-autocomplete__list search-autocomplete__list--below"
+              : "search-autocomplete__list"
+          }
           role="listbox"
           aria-label="Suggestions"
         >
